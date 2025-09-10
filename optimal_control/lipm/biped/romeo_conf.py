@@ -89,7 +89,8 @@ masks_posture = np.ones(nv - 6)
 
 # configuration for viewer
 # ----------------------------------------------
-viewer = pin.visualize.MeshcatVisualizer
+from pinocchio.visualize import MeshcatVisualizer
+viewer = MeshcatVisualizer
 PRINT_N = 500  # print every PRINT_N time steps
 DISPLAY_N = 20  # update robot configuration in viwewer every DISPLAY_N time steps
 CAMERA_TRANSFORM = [

@@ -1,6 +1,6 @@
 import time
 
-import orc.lipm.romeo_conf as conf
+import orc.optimal_control.lipm.biped.romeo_conf as conf
 import matplotlib.pyplot as plt
 import numpy as np
 import orc.utils.plot_utils as plut
