@@ -75,7 +75,7 @@ gain_vector = np.array(  # gain vector for postural task
         100.
     ]  #head
 )
-masks_posture = np.ones(32)
+masks_posture = np.zeros(32)
 
 tau_max_scaling = 1.45  # scaling factor of torque bounds
 v_max_scaling = 0.8

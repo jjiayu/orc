@@ -111,7 +111,7 @@ com_acc_ref = np.zeros((3, N))
 # Get initial CoM position
 com_initial = original_com_pos_ref[:, 0].copy()
 com_target = com_initial.copy()
-com_target[1] += 0.10  # Move 10cm to the left (positive Y direction)
+com_target[1] += 0.20  # Move 10cm to the left (positive Y direction)
 
 # Create smooth trajectory using cosine interpolation
 for i in range(N):
@@ -125,7 +125,7 @@ for i in range(N):
     
     # Velocity: derivative of position
     if i < N - 1:
-        dt = 0.002  # conf.dt
+        dt = conf.dt
         vel_factor = np.pi * np.sin(np.pi * progress) / (2 * (N - 1) * dt)
         com_vel_ref[:, i] = vel_factor * (com_target - com_initial)
     
