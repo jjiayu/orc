@@ -209,8 +209,9 @@ vizutils.addViewerSphere(tsid.viz, 'world/rf_ref', conf.REF_SPHERE_RADIUS, conf.
 vizutils.addViewerSphere(tsid.viz, 'world/lf', conf.SPHERE_RADIUS, conf.LF_SPHERE_COLOR)
 vizutils.addViewerSphere(tsid.viz, 'world/lf_ref', conf.REF_SPHERE_RADIUS, conf.LF_REF_SPHERE_COLOR)
 
-th_gui = threading.Thread(target=create_gui)
-th_gui.start()
-
-th_simu = threading.Thread(target=run_simu)
+# Start simulation in background thread
+th_simu = threading.Thread(target=run_simu, daemon=True)
 th_simu.start()
+
+# Run GUI on main thread (required for macOS)
+create_gui()
