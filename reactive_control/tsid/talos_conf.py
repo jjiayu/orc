@@ -6,8 +6,15 @@ from example_robot_data.robots_loader import getModelPath
 np.set_printoptions(precision=3, linewidth=200, suppress=True)
 LINE_WIDTH = 60
 
+
+# For code to run
+DATA_FILE_LIPM = "romeo_walking_traj_lipm.npz"
+DATA_FILE_TSID = "romeo_walking_traj_tsid.npz"
+
 N_SIMULATION = 1000  # number of time steps simulated
-dt = 0.005           # controller time step
+dt = 0.002           # controller time step
+T_pre = 1.5  # simulation time before starting to walk
+T_post = 1.5  # simulation time after walking
 
 lxp = 0.10                                  # foot length in positive x direction
 lxn = 0.10                                  # foot length in negative x direction
@@ -20,6 +27,7 @@ fMax = 1000.0                               # maximum normal force
 rf_frame_name = "leg_right_sole_fix_joint"  # right foot frame name
 lf_frame_name = "leg_left_sole_fix_joint"   # left foot frame name
 contactNormal = np.array([0., 0., 1.])      # direction of the normal to the contact surface
+
 
 w_com = 10.0             # weight of center of mass task
 w_am = 1e-3             # weight of angular momentum task
