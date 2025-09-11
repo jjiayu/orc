@@ -46,9 +46,39 @@ tsid_biped.display(q)
 time.sleep(1.0)
 
 #define contact pattern
-contact_patterns = ["double", "left", "double"] #variables mean contact configuration
-phase_durations = np.array([3.0, 6.0, 3.0])
+Num_Steps = 2
 stride_length = 0.1
+first_swing_foot = "left"
+initial_lf_position = tsid_biped.get_placement_LF().translation
+initial_rf_position = tsid_biped.get_placement_RF().translation
+footstep_plan = np.array([[0.11,0.096,0.07],[0.21,-0.096,0.07]])
+CoM_Positions = []
+for i in range(Num_Steps):
+    if i == 0:
+        # First step: midpoint between initial right foot (stance) and first footstep (left foot)
+        if first_swing_foot == "left":
+            stance_foot_pos = initial_rf_position
+            next_footstep_pos = footstep_plan[i]
+        else:
+            stance_foot_pos = initial_lf_position
+            next_footstep_pos = footstep_plan[i]
+    else:
+        # Subsequent steps: midpoint between previous footstep and current footstep
+        stance_foot_pos = footstep_plan[i-1]
+        next_footstep_pos = footstep_plan[i]
+    
+    # Calculate midpoint in 3D with constant CoM height
+    com_pos = (stance_foot_pos + next_footstep_pos) / 2
+    com_pos[2] = com_pos[2] + CoM_Height  # Set constant CoM height
+    CoM_Positions.append(com_pos)
+    print("stance foot position: ", stance_foot_pos)
+    print("next footstep position: ", next_footstep_pos)
+    print("CoM position: ", com_pos)
+
+CoM_Positions = np.array(CoM_Positions)
+
+contact_patterns = ["double", "single", "double"] #variables mean contact configuration
+phase_durations = np.array([3.0, 6.0, 3.0])
 
 #Let us just make one step
 N = int(np.sum(phase_durations)/conf.dt) #1500 #data["com"].shape[1] #Number of Time steps, means 3s duration
@@ -102,7 +132,7 @@ com_above_left[0] = lf_current[0]  # X position of left foot
 com_above_left[1] = lf_current[1]  # Y position of left foot
 
 com_middle = com_initial.copy()  # Return to middle between feet
-com_x_offset = 0.021
+com_x_offset = 0.0
 com_middle[0] = (lf_current[0] + rf_current[0]) / 2 + com_x_offset
 com_middle[1] = (lf_current[1] + rf_current[1]) / 2
 
@@ -195,10 +225,19 @@ for i in range(-N_pre, N + N_post):
             phase_start_time = phase_durations[0] + phase_durations[1]
             local_time = t_traj - phase_start_time
             
+            # Calculate current foot positions after swing
+            current_lf_pos = lf_current.copy()
+            current_rf_pos = rf_current.copy()
+            current_rf_pos[0] += stride_length  # Right foot has moved forward
+            
+            # Calculate center between current foot positions
+            current_com_middle = (current_lf_pos + current_rf_pos) / 2
+            current_com_middle[2] = CoM_Height
+            
             if local_time >= 0 and local_time <= phase_durations[2]:
                 # Compute 3rd order polynomial trajectory for this phase
                 com_phase3_pos, com_phase3_vel, com_phase3_acc = compute_3rd_order_poly_traj(
-                    com_above_left, com_middle, phase_durations[2], conf.dt
+                    com_above_left, current_com_middle, phase_durations[2], conf.dt
                 )
                 local_idx = int(local_time / conf.dt)
                 if local_idx < com_phase3_pos.shape[1]:
@@ -206,11 +245,11 @@ for i in range(-N_pre, N + N_post):
                     com_vel_ref_current = com_phase3_vel[:, local_idx]
                     com_acc_ref_current = com_phase3_acc[:, local_idx]
                 else:
-                    com_pos_ref_current = com_middle
+                    com_pos_ref_current = current_com_middle
                     com_vel_ref_current = np.zeros(3)
                     com_acc_ref_current = np.zeros(3)
             else:
-                com_pos_ref_current = com_middle
+                com_pos_ref_current = current_com_middle
                 com_vel_ref_current = np.zeros(3)
                 com_acc_ref_current = np.zeros(3)
         else:
@@ -219,7 +258,16 @@ for i in range(-N_pre, N + N_post):
             com_acc_ref_current = np.zeros(3)
     else:
         # Stabilization phase: hold final position with zero velocity/acceleration
-        com_pos_ref_current = com_middle
+        # Calculate final foot positions after swing
+        final_lf_pos = lf_current.copy()
+        final_rf_pos = rf_current.copy()
+        final_rf_pos[0] += stride_length  # Right foot has moved forward
+        
+        # Calculate center between final foot positions
+        final_com_middle = (final_lf_pos + final_rf_pos) / 2
+        final_com_middle[2] = CoM_Height
+        
+        com_pos_ref_current = final_com_middle
         com_vel_ref_current = np.zeros(3)
         com_acc_ref_current = np.zeros(3)
         contact_phase_current = "double"
