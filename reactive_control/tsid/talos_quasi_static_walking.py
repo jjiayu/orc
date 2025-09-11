@@ -48,10 +48,10 @@ time.sleep(1.0)
 #define contact pattern
 Num_Steps = 2
 stride_length = 0.1
-first_swing_foot = "left"
+first_swing_foot = "right"
 initial_lf_position = tsid_biped.get_placement_LF().translation
 initial_rf_position = tsid_biped.get_placement_RF().translation
-footstep_plan = np.array([[0.11,0.096,0.07],[0.21,-0.096,0.07]])
+footstep_plan = np.array([[0.11,-0.096,0.0],[0.21,0.096,0.0]])
 CoM_Positions = []
 for i in range(Num_Steps):
     if i == 0:
@@ -80,8 +80,9 @@ CoM_Positions = np.array(CoM_Positions)
 contact_patterns = ["double", "single", "double"] #variables mean contact configuration
 phase_durations = np.array([3.0, 6.0, 3.0])
 
-#Let us just make one step
-N = int(np.sum(phase_durations)/conf.dt) #1500 #data["com"].shape[1] #Number of Time steps, means 3s duration
+# Multi-step walking: total duration for all steps
+total_duration = Num_Steps * np.sum(phase_durations)
+N = int(total_duration / conf.dt)
 N_pre = int(conf.T_pre / conf.dt)
 N_post = int(conf.T_post / conf.dt)
 
@@ -167,107 +168,130 @@ for i in range(-N_pre, N + N_post):
         # Main trajectory phase - compute reference on-the-fly
         t_traj = i * conf.dt  # Trajectory time (starts from 0)
         
-        # Find which phase we're in
+        # Calculate which step and phase we're in
+        step_duration = np.sum(phase_durations)
+        current_step = int(t_traj // step_duration)  # Which step (0, 1, 2, ...)
+        t_within_step = t_traj % step_duration  # Time within current step
+        
+        # Find which phase within the current step
         phase_idx = 0
+        cumulative_time = 0
         for j in range(len(phase_durations)):
-            if t_traj < phase_end_times[j]:
+            cumulative_time += phase_durations[j]
+            if t_within_step < cumulative_time:
                 phase_idx = j
                 break
         
-        contact_phase_current = contact_patterns[phase_idx]
+        # Determine which foot is swinging based on step number and first_swing_foot
+        if first_swing_foot == "left":
+            swing_foot = "left" if current_step % 2 == 0 else "right"
+        else:
+            swing_foot = "right" if current_step % 2 == 0 else "left"
+        
+        # Determine contact pattern based on phase and swing foot
+        if phase_idx == 1:  # Single support phase
+            if swing_foot == "left":
+                contact_phase_current = "right"  # Right stance, left swing
+            else:
+                contact_phase_current = "left"   # Left stance, right swing
+        else:
+            contact_phase_current = "double"
+        
+        # Calculate local time within current phase
+        phase_start_time = 0
+        for j in range(phase_idx):
+            phase_start_time += phase_durations[j]
+        local_time = t_within_step - phase_start_time
+        
+        # Get current foot positions based on completed steps
+        current_lf_pos = initial_lf_position.copy()
+        current_rf_pos = initial_rf_position.copy()
+        
+        # Update foot positions based on completed footsteps
+        for step in range(min(current_step, Num_Steps)):
+            # Determine which foot swings for this step
+            if first_swing_foot == "left":
+                step_swing_foot = "left" if step % 2 == 0 else "right"
+            else:
+                step_swing_foot = "right" if step % 2 == 0 else "left"
+            
+            # Update the position of the foot that swung in this step
+            if step_swing_foot == "left":
+                current_lf_pos = footstep_plan[step].copy()
+            else:
+                current_rf_pos = footstep_plan[step].copy()
+        
+        # Determine stance foot position for current step
+        if swing_foot == "left":
+            stance_foot_pos = current_rf_pos.copy()
+            stance_foot_pos[2] = CoM_Height
+        else:
+            stance_foot_pos = current_lf_pos.copy()
+            stance_foot_pos[2] = CoM_Height
+        
+        # Get target CoM position for current step
+        if current_step < Num_Steps:
+            target_com_pos = CoM_Positions[current_step].copy()
+        else:
+            target_com_pos = CoM_Positions[-1].copy()
         
         # Generate CoM reference based on phase
-        if phase_idx == 0:  # Phase 1: Double support - move to left foot
-            local_time = t_traj
-            if local_time <= phase_durations[0]:
-                # Compute 3rd order polynomial trajectory for this phase
-                com_phase1_pos, com_phase1_vel, com_phase1_acc = compute_3rd_order_poly_traj(
-                    com_initial, com_above_left, phase_durations[0], conf.dt
+        if phase_idx == 0:  # Phase 1: Double support - move CoM to stance foot
+            if local_time >= 0 and local_time <= phase_durations[0]:
+                # Start from previous target or initial position
+                if current_step == 0:
+                    com_start = com_initial.copy()
+                else:
+                    com_start = CoM_Positions[current_step - 1].copy()
+                
+                com_phase_pos, com_phase_vel, com_phase_acc = compute_3rd_order_poly_traj(
+                    com_start, stance_foot_pos, phase_durations[0], conf.dt
                 )
                 local_idx = int(local_time / conf.dt)
-                if local_idx < com_phase1_pos.shape[1]:
-                    com_pos_ref_current = com_phase1_pos[:, local_idx]
-                    com_vel_ref_current = com_phase1_vel[:, local_idx]
-                    com_acc_ref_current = com_phase1_acc[:, local_idx]
+                if local_idx < com_phase_pos.shape[1]:
+                    com_pos_ref_current = com_phase_pos[:, local_idx]
+                    com_vel_ref_current = com_phase_vel[:, local_idx]
+                    com_acc_ref_current = com_phase_acc[:, local_idx]
                 else:
-                    com_pos_ref_current = com_above_left
+                    com_pos_ref_current = stance_foot_pos
                     com_vel_ref_current = np.zeros(3)
                     com_acc_ref_current = np.zeros(3)
             else:
-                com_pos_ref_current = com_above_left
+                com_pos_ref_current = stance_foot_pos
                 com_vel_ref_current = np.zeros(3)
                 com_acc_ref_current = np.zeros(3)
                 
-        elif phase_idx == 1:  # Phase 2: Left support - swing right foot
-            com_pos_ref_current = com_above_left
+        elif phase_idx == 1:  # Phase 2: Single support - swing foot
+            # CoM stays over stance foot during swing
+            com_pos_ref_current = stance_foot_pos
             com_vel_ref_current = np.zeros(3)
             com_acc_ref_current = np.zeros(3)
             
-            # Generate swing foot trajectory
-            phase_start_time = phase_durations[0]
-            local_time = t_traj - phase_start_time
-            swing_duration = phase_durations[1]
-            
-            if local_time >= 0 and local_time <= swing_duration:
-                # Calculate swing foot position
-                swing_foot_pos, swing_foot_vel, swing_foot_acc = generate_swing_foot_trajectory(
-                    swing_foot_initial_pos, stride_length, step_height, swing_duration, local_time
-                )
-            else:
-                # End of swing - foot should be on ground at new position
-                final_pos = swing_foot_initial_pos.copy()
-                final_pos[0] += stride_length  # Move forward by stride length
-                swing_foot_pos = final_pos
-                swing_foot_vel = np.zeros(3)
-                swing_foot_acc = np.zeros(3)
-            
-        elif phase_idx == 2:  # Phase 3: Double support - move to middle
-            phase_start_time = phase_durations[0] + phase_durations[1]
-            local_time = t_traj - phase_start_time
-            
-            # Calculate current foot positions after swing
-            current_lf_pos = lf_current.copy()
-            current_rf_pos = rf_current.copy()
-            current_rf_pos[0] += stride_length  # Right foot has moved forward
-            
-            # Calculate center between current foot positions
-            current_com_middle = (current_lf_pos + current_rf_pos) / 2
-            current_com_middle[2] = CoM_Height
-            
+        elif phase_idx == 2:  # Phase 3: Double support - move CoM to target position
             if local_time >= 0 and local_time <= phase_durations[2]:
-                # Compute 3rd order polynomial trajectory for this phase
-                com_phase3_pos, com_phase3_vel, com_phase3_acc = compute_3rd_order_poly_traj(
-                    com_above_left, current_com_middle, phase_durations[2], conf.dt
+                com_phase_pos, com_phase_vel, com_phase_acc = compute_3rd_order_poly_traj(
+                    stance_foot_pos, target_com_pos, phase_durations[2], conf.dt
                 )
                 local_idx = int(local_time / conf.dt)
-                if local_idx < com_phase3_pos.shape[1]:
-                    com_pos_ref_current = com_phase3_pos[:, local_idx]
-                    com_vel_ref_current = com_phase3_vel[:, local_idx]
-                    com_acc_ref_current = com_phase3_acc[:, local_idx]
+                if local_idx < com_phase_pos.shape[1]:
+                    com_pos_ref_current = com_phase_pos[:, local_idx]
+                    com_vel_ref_current = com_phase_vel[:, local_idx]
+                    com_acc_ref_current = com_phase_acc[:, local_idx]
                 else:
-                    com_pos_ref_current = current_com_middle
+                    com_pos_ref_current = target_com_pos
                     com_vel_ref_current = np.zeros(3)
                     com_acc_ref_current = np.zeros(3)
             else:
-                com_pos_ref_current = current_com_middle
+                com_pos_ref_current = target_com_pos
                 com_vel_ref_current = np.zeros(3)
                 com_acc_ref_current = np.zeros(3)
         else:
-            com_pos_ref_current = com_middle
+            com_pos_ref_current = target_com_pos
             com_vel_ref_current = np.zeros(3)
             com_acc_ref_current = np.zeros(3)
     else:
         # Stabilization phase: hold final position with zero velocity/acceleration
-        # Calculate final foot positions after swing
-        final_lf_pos = lf_current.copy()
-        final_rf_pos = rf_current.copy()
-        final_rf_pos[0] += stride_length  # Right foot has moved forward
-        
-        # Calculate center between final foot positions
-        final_com_middle = (final_lf_pos + final_rf_pos) / 2
-        final_com_middle[2] = CoM_Height
-        
-        com_pos_ref_current = final_com_middle
+        com_pos_ref_current = CoM_Positions[-1].copy()  # Final target CoM position
         com_vel_ref_current = np.zeros(3)
         com_acc_ref_current = np.zeros(3)
         contact_phase_current = "double"
@@ -276,51 +300,103 @@ for i in range(-N_pre, N + N_post):
     if i > 0 and i < N - 1:
         # Get previous phase for comparison
         t_prev = (i-1) * conf.dt
-        phase_idx_prev = 0
+        prev_step_duration = np.sum(phase_durations)
+        prev_current_step = int(t_prev // prev_step_duration)
+        prev_t_within_step = t_prev % prev_step_duration
+        
+        prev_phase_idx = 0
+        prev_cumulative_time = 0
         for j in range(len(phase_durations)):
-            if t_prev < phase_end_times[j]:
-                phase_idx_prev = j
+            prev_cumulative_time += phase_durations[j]
+            if prev_t_within_step < prev_cumulative_time:
+                prev_phase_idx = j
                 break
-        contact_phase_prev = contact_patterns[phase_idx_prev]
+        
+        # Determine previous swing foot
+        if first_swing_foot == "left":
+            prev_swing_foot = "left" if prev_current_step % 2 == 0 else "right"
+        else:
+            prev_swing_foot = "right" if prev_current_step % 2 == 0 else "left"
+        
+        # Determine previous contact pattern
+        if prev_phase_idx == 1:  # Single support phase
+            if prev_swing_foot == "left":
+                contact_phase_prev = "right"  # Right stance, left swing
+            else:
+                contact_phase_prev = "left"   # Left stance, right swing
+        else:
+            contact_phase_prev = "double"
         
         if contact_phase_current != contact_phase_prev:
-            print(f"Time {t:.3f} Changing contact phase from {contact_phase_prev} to {contact_phase_current}")
+            print(f"Time {t:.3f} Step {current_step} Phase {phase_idx} Changing contact from {contact_phase_prev} to {contact_phase_current}, swing foot: {swing_foot}")
             if contact_phase_current == "left":
                 # Entering single support - left foot stance, right foot swing
+                print(f"  -> Adding LF contact, removing RF contact")
                 tsid_biped.add_contact_LF()
                 tsid_biped.remove_contact_RF()
+            elif contact_phase_current == "right":
+                # Entering single support - right foot stance, left foot swing
+                print(f"  -> Adding RF contact, removing LF contact")
+                tsid_biped.add_contact_RF()
+                tsid_biped.remove_contact_LF()
             elif contact_phase_current == "double":
                 # Entering double support - both feet in contact
+                print(f"  -> Adding both LF and RF contacts")
                 tsid_biped.add_contact_LF()
                 tsid_biped.add_contact_RF()
     
     # Set CoM reference
     tsid_biped.set_com_ref(com_pos_ref_current, com_vel_ref_current, com_acc_ref_current)
     
-    # Set foot references
-    if i >= 0 and i < N:
-        t_traj = i * conf.dt
-        phase_idx = 0
-        for j in range(len(phase_durations)):
-            if t_traj < phase_end_times[j]:
-                phase_idx = j
-                break
-        
-        if phase_idx == 1:  # Single support phase - swing right foot
-            phase_start_time = phase_durations[0]
-            local_time = t_traj - phase_start_time
+    # Set foot references for swing foot during single support
+    if i >= 0 and i < N and 'swing_foot' in locals() and 'phase_idx' in locals():
+        if phase_idx == 1:  # Single support phase
             swing_duration = phase_durations[1]
             
+            # Get swing foot initial and target positions
+            if swing_foot == "left":
+                swing_initial_pos = current_lf_pos.copy()
+                if current_step < Num_Steps:
+                    swing_target_pos = footstep_plan[current_step].copy()
+                else:
+                    swing_target_pos = swing_initial_pos.copy()
+                    swing_target_pos[0] += stride_length
+            else:  # right swing
+                swing_initial_pos = current_rf_pos.copy()
+                if current_step < Num_Steps:
+                    swing_target_pos = footstep_plan[current_step].copy()
+                else:
+                    swing_target_pos = swing_initial_pos.copy()
+                    swing_target_pos[0] += stride_length
+            
             if local_time >= 0 and local_time <= swing_duration:
+                # Calculate stride length for this step
+                step_stride = np.linalg.norm(swing_target_pos[:2] - swing_initial_pos[:2])
+                
                 swing_foot_pos, swing_foot_vel, swing_foot_acc = generate_swing_foot_trajectory(
-                    swing_foot_initial_pos, stride_length, step_height, swing_duration, local_time
+                    swing_initial_pos, step_stride, step_height, swing_duration, local_time
                 )
-                tsid_biped.set_RF_3d_ref(swing_foot_pos, swing_foot_vel, swing_foot_acc)
+                
+                # Adjust trajectory to reach target position
+                progress = local_time / swing_duration
+                swing_foot_pos[:2] = swing_initial_pos[:2] + progress * (swing_target_pos[:2] - swing_initial_pos[:2])
+                
+                if swing_foot == "left":
+                    tsid_biped.set_LF_3d_ref(swing_foot_pos, swing_foot_vel, swing_foot_acc)
+                    # Debug print for left foot trajectory
+                    if i % 100 == 0:
+                        print(f"  Setting LF ref: [{swing_foot_pos[0]:.3f}, {swing_foot_pos[1]:.3f}, {swing_foot_pos[2]:.3f}], progress={progress:.3f}")
+                else:
+                    tsid_biped.set_RF_3d_ref(swing_foot_pos, swing_foot_vel, swing_foot_acc)
+                    # Debug print for right foot trajectory
+                    if i % 100 == 0:
+                        print(f"  Setting RF ref: [{swing_foot_pos[0]:.3f}, {swing_foot_pos[1]:.3f}, {swing_foot_pos[2]:.3f}], progress={progress:.3f}")
             else:
-                # End of swing - foot at final position
-                final_pos = swing_foot_initial_pos.copy()
-                final_pos[0] += stride_length
-                tsid_biped.set_RF_3d_ref(final_pos, np.zeros(3), np.zeros(3))
+                # End of swing - foot at target position
+                if swing_foot == "left":
+                    tsid_biped.set_LF_3d_ref(swing_target_pos, np.zeros(3), np.zeros(3))
+                else:
+                    tsid_biped.set_RF_3d_ref(swing_target_pos, np.zeros(3), np.zeros(3))
     
     
     # Solve the QP problem
@@ -347,18 +423,43 @@ for i in range(-N_pre, N + N_post):
     if i % 100 == 0:
         current_com = tsid_biped.robot.com(tsid_biped.formulation.data())
         current_com_vel = tsid_biped.robot.com_vel(tsid_biped.formulation.data())
+        actual_lf_pos = tsid_biped.get_placement_LF().translation
+        actual_rf_pos = tsid_biped.get_placement_RF().translation
+        
         print("Time %.3f" % (t))
         if i >= 0 and i < N:
             print(f"  CoM ref: [{com_pos_ref_current[0]:.3f}, {com_pos_ref_current[1]:.3f}, {com_pos_ref_current[2]:.3f}]")
             print(f"  CoM vel ref: [{com_vel_ref_current[0]:.3f}, {com_vel_ref_current[1]:.3f}, {com_vel_ref_current[2]:.3f}]")
+            
+            # Print step and phase info
+            if 'current_step' in locals() and 'phase_idx' in locals() and 'swing_foot' in locals():
+                print(f"  Step {current_step}, Phase {phase_idx}, Swing foot: {swing_foot}")
+                
+                # Print foot reference targets if they were set
+                if phase_idx == 1 and 'swing_target_pos' in locals():
+                    if swing_foot == "left":
+                        print(f"  LF target: [{swing_target_pos[0]:.3f}, {swing_target_pos[1]:.3f}, {swing_target_pos[2]:.3f}]")
+                    else:
+                        print(f"  RF target: [{swing_target_pos[0]:.3f}, {swing_target_pos[1]:.3f}, {swing_target_pos[2]:.3f}]")
+                        
         elif i < 0:
             print(f"  CoM ref: [{com_pos_ref_current[0]:.3f}, {com_pos_ref_current[1]:.3f}, {com_pos_ref_current[2]:.3f}] (prep)")
             print(f"  CoM vel ref: [0.000, 0.000, 0.000] (prep)")
         else:
             print(f"  CoM ref: [{com_pos_ref_current[0]:.3f}, {com_pos_ref_current[1]:.3f}, {com_pos_ref_current[2]:.3f}] (stab)")
             print(f"  CoM vel ref: [0.000, 0.000, 0.000] (stab)")
+            
         print(f"  CoM actual: [{current_com[0]:.3f}, {current_com[1]:.3f}, {current_com[2]:.3f}]")
         print(f"  CoM vel actual: [{current_com_vel[0]:.3f}, {current_com_vel[1]:.3f}, {current_com_vel[2]:.3f}]")
+        print(f"  LF actual: [{actual_lf_pos[0]:.3f}, {actual_lf_pos[1]:.3f}, {actual_lf_pos[2]:.3f}]")
+        print(f"  RF actual: [{actual_rf_pos[0]:.3f}, {actual_rf_pos[1]:.3f}, {actual_rf_pos[2]:.3f}]")
+        
+        # Print contact status
+        lf_contact_active = tsid_biped.contact_LF_active
+        rf_contact_active = tsid_biped.contact_RF_active
+        print(f"  LF contact: {'ACTIVE' if lf_contact_active else 'BROKEN'}")
+        print(f"  RF contact: {'ACTIVE' if rf_contact_active else 'BROKEN'}")
+        
         print(f"  Tracking error: {norm(tsid_biped.comTask.position_error, 2):.3f}")
         print(f"  ||v||: {norm(v, 2):.3f}, ||dv||: {norm(dv):.3f}")
     
