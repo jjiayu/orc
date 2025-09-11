@@ -8,7 +8,7 @@ import orc.utils.plot_utils as plut
 from numpy import nan
 from numpy.linalg import norm as norm
 from tsid_biped import TsidBiped
-from orc.optimal_control.lipm.biped.lipm_to_tsid import compute_5th_order_poly_traj, generate_swing_foot_trajectory
+from orc.optimal_control.lipm.biped.lipm_to_tsid import compute_5th_order_poly_traj, generate_square_foot_trajectory
 
 import tsid
 
@@ -254,17 +254,15 @@ for phase_idx in range(len(gait_pattern)):
         rf_vel_phase = np.zeros((3, N_phase))
         rf_acc_phase = np.zeros((3, N_phase))
         
-        # Generate swing trajectory for left foot
-        stride_length = lf_end[0] - lf_start[0]
-        
+        # Generate square swing trajectory for left foot
         lf_pos_phase = np.zeros((3, N_phase))
         lf_vel_phase = np.zeros((3, N_phase))
         lf_acc_phase = np.zeros((3, N_phase))
         
         for i in range(N_phase):
             local_time = i * conf.dt
-            pos, vel, acc = generate_swing_foot_trajectory(
-                lf_start, stride_length, step_height, phase_duration, local_time)
+            pos, vel, acc = generate_square_foot_trajectory(
+                lf_start, lf_end, step_height, phase_duration, local_time)
             lf_pos_phase[:, i] = pos
             lf_vel_phase[:, i] = vel
             lf_acc_phase[:, i] = acc
@@ -275,17 +273,15 @@ for phase_idx in range(len(gait_pattern)):
         lf_vel_phase = np.zeros((3, N_phase))
         lf_acc_phase = np.zeros((3, N_phase))
         
-        # Generate swing trajectory for right foot
-        stride_length = rf_end[0] - rf_start[0]
-        
+        # Generate square swing trajectory for right foot
         rf_pos_phase = np.zeros((3, N_phase))
         rf_vel_phase = np.zeros((3, N_phase))
         rf_acc_phase = np.zeros((3, N_phase))
         
         for i in range(N_phase):
             local_time = i * conf.dt
-            pos, vel, acc = generate_swing_foot_trajectory(
-                rf_start, stride_length, step_height, phase_duration, local_time)
+            pos, vel, acc = generate_square_foot_trajectory(
+                rf_start, rf_end, step_height, phase_duration, local_time)
             rf_pos_phase[:, i] = pos
             rf_vel_phase[:, i] = vel
             rf_acc_phase[:, i] = acc

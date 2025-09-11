@@ -338,3 +338,82 @@ def generate_swing_foot_trajectory(initial_pos, stride_length, step_height, swin
         acc[2] = -step_height * (60*t_norm - 180*t_norm**2 + 120*t_norm**3) / (t_down**2)
     
     return pos, vel, acc
+
+def generate_square_foot_trajectory(start_pos, end_pos, step_height, total_duration, local_time):
+    """
+    Generate square foot trajectory with 3 phases:
+    1. Lift up vertically from start position (first 1/3 of duration)
+    2. Move horizontally to target position while maintaining height (middle 1/3)
+    3. Touch down vertically to end position (last 1/3)
+    
+    Args:
+        start_pos: Starting foot position [x, y, z]
+        end_pos: Target foot position [x, y, z] 
+        step_height: Maximum height to lift the foot
+        total_duration: Total swing duration
+        local_time: Current time within the swing phase
+    
+    Returns:
+        pos, vel, acc: Position, velocity, acceleration at local_time
+    """
+    phase_duration = total_duration / 3.0
+    pos = start_pos.copy()
+    vel = np.zeros(3)
+    acc = np.zeros(3)
+    
+    if local_time <= phase_duration:
+        # Phase 1: Lift up vertically
+        t_norm = local_time / phase_duration
+        # Use 5th order polynomial for smooth motion
+        z_progress = 10*t_norm**3 - 15*t_norm**4 + 6*t_norm**5
+        z_vel_norm = (30*t_norm**2 - 60*t_norm**3 + 30*t_norm**4) / phase_duration
+        z_acc_norm = (60*t_norm - 180*t_norm**2 + 120*t_norm**3) / (phase_duration**2)
+        
+        pos[2] = start_pos[2] + step_height * z_progress
+        vel[2] = step_height * z_vel_norm
+        acc[2] = step_height * z_acc_norm
+        
+    elif local_time <= 2 * phase_duration:
+        # Phase 2: Move horizontally at constant height
+        t_local = local_time - phase_duration
+        t_norm = t_local / phase_duration
+        # Use 5th order polynomial for smooth horizontal motion
+        xy_progress = 10*t_norm**3 - 15*t_norm**4 + 6*t_norm**5
+        xy_vel_norm = (30*t_norm**2 - 60*t_norm**3 + 30*t_norm**4) / phase_duration
+        xy_acc_norm = (60*t_norm - 180*t_norm**2 + 120*t_norm**3) / (phase_duration**2)
+        
+        # Horizontal motion
+        pos[0] = start_pos[0] + (end_pos[0] - start_pos[0]) * xy_progress
+        pos[1] = start_pos[1] + (end_pos[1] - start_pos[1]) * xy_progress
+        vel[0] = (end_pos[0] - start_pos[0]) * xy_vel_norm
+        vel[1] = (end_pos[1] - start_pos[1]) * xy_vel_norm
+        acc[0] = (end_pos[0] - start_pos[0]) * xy_acc_norm
+        acc[1] = (end_pos[1] - start_pos[1]) * xy_acc_norm
+        
+        # Maintain height
+        pos[2] = start_pos[2] + step_height
+        
+    else:
+        # Phase 3: Touch down vertically
+        t_local = local_time - 2 * phase_duration
+        t_norm = t_local / phase_duration
+        # Use 5th order polynomial for smooth landing
+        z_progress = 10*t_norm**3 - 15*t_norm**4 + 6*t_norm**5
+        z_vel_norm = (30*t_norm**2 - 60*t_norm**3 + 30*t_norm**4) / phase_duration
+        z_acc_norm = (60*t_norm - 180*t_norm**2 + 120*t_norm**3) / (phase_duration**2)
+        
+        # Final horizontal position
+        pos[0] = end_pos[0]
+        pos[1] = end_pos[1]
+        
+        # Descend from step_height to ground level
+        # At t_norm=0: pos[2] = start_pos[2] + step_height (start of descent)
+        # At t_norm=1: pos[2] = end_pos[2] (end of descent)
+        pos[2] = (start_pos[2] + step_height) * (1 - z_progress) + end_pos[2] * z_progress
+        
+        # Velocity: derivative of position
+        # vel[2] = d/dt[pos[2]] = (end_pos[2] - start_pos[2] - step_height) * z_vel_norm
+        vel[2] = (end_pos[2] - start_pos[2] - step_height) * z_vel_norm
+        acc[2] = (end_pos[2] - start_pos[2] - step_height) * z_acc_norm
+    
+    return pos, vel, acc
