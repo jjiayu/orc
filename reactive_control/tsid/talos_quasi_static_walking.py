@@ -106,87 +106,7 @@ com_x_offset = 0.021
 com_middle[0] = (lf_current[0] + rf_current[0]) / 2 + com_x_offset
 com_middle[1] = (lf_current[1] + rf_current[1]) / 2
 
-for i in range(int(N)):
-    t = i * conf.dt
-    
-    # Find which phase we're in
-    phase_idx = 0
-    for j in range(len(phase_durations)):
-        if t < phase_end_times[j]:
-            phase_idx = j
-            break
-    
-    contact_phase.append(contact_patterns[phase_idx])
-    
-    # Generate CoM reference based on phase
-    if phase_idx == 0:  # Phase 1: Double support - shift to left foot
-        # Calculate local time within this phase
-        phase_start_time = 0.0
-        local_time = t - phase_start_time
-        
-        if local_time <= phase_durations[0]:
-            # Compute 3rd order polynomial trajectory for this phase
-            com_phase1_pos, com_phase1_vel, com_phase1_acc = compute_3rd_order_poly_traj(
-                com_initial, com_above_left, phase_durations[0], conf.dt
-            )
-            local_idx = int(local_time / conf.dt)
-            if local_idx < com_phase1_pos.shape[1]:
-                com_pos_ref[:, i] = com_phase1_pos[:, local_idx]
-                com_vel_ref[:, i] = com_phase1_vel[:, local_idx]
-                com_acc_ref[:, i] = com_phase1_acc[:, local_idx]
-            else:
-                com_pos_ref[:, i] = com_above_left
-                com_vel_ref[:, i] = np.zeros(3)
-                com_acc_ref[:, i] = np.zeros(3)
-        else:
-            # End of phase - maintain final position
-            com_pos_ref[:, i] = com_above_left
-            com_vel_ref[:, i] = np.zeros(3)
-            com_acc_ref[:, i] = np.zeros(3)
-        
-    elif phase_idx == 1:  # Phase 2: Left support - maintain position
-        com_pos_ref[:, i] = com_above_left
-        com_vel_ref[:, i] = np.zeros(3)
-        com_acc_ref[:, i] = np.zeros(3)
-        
-    elif phase_idx == 2:  # Phase 3: Double support - move to middle
-        # Calculate local time within this phase
-        phase_start_time = phase_durations[0] + phase_durations[1]
-        local_time = t - phase_start_time
-        
-        if local_time >= 0 and local_time <= phase_durations[2]:
-            # Compute 3rd order polynomial trajectory for this phase
-            com_phase3_pos, com_phase3_vel, com_phase3_acc = compute_3rd_order_poly_traj(
-                com_above_left, com_middle, phase_durations[2], conf.dt
-            )
-            local_idx = int(local_time / conf.dt)
-            if local_idx < com_phase3_pos.shape[1]:
-                com_pos_ref[:, i] = com_phase3_pos[:, local_idx]
-                com_vel_ref[:, i] = com_phase3_vel[:, local_idx]
-                com_acc_ref[:, i] = com_phase3_acc[:, local_idx]
-            else:
-                com_pos_ref[:, i] = com_middle
-                com_vel_ref[:, i] = np.zeros(3)
-                com_acc_ref[:, i] = np.zeros(3)
-        else:
-            # End of phase - maintain final position
-            com_pos_ref[:, i] = com_middle
-            com_vel_ref[:, i] = np.zeros(3)
-            com_acc_ref[:, i] = np.zeros(3)
-    
-    else:
-        # Beyond all phases - maintain final position
-        com_pos_ref[:, i] = com_middle
-        com_vel_ref[:, i] = np.zeros(3)
-        com_acc_ref[:, i] = np.zeros(3)
-
-# # Apply offset to align with robot's current position
-# x_lf = tsid_biped.get_placement_LF().translation
-# offset = x_lf - x_LF_ref[:, 0]
-# for i in range(N):
-#     com_pos_ref[:, i] += offset + np.array([0.0, 0.0, 0.0])
-
-print("CoM trajectory generated successfully!")
+print("CoM trajectory setup completed!")
 
 t = -conf.T_pre
 q, v = tsid_biped.q, tsid_biped.v
@@ -195,32 +115,113 @@ qp_data_list = []
 # c = 0
 q_list = []
 
-# Simple CoM tracking loop with preparation and stabilization phases
+# Combined real-time reference generation and simulation loop
 input("Press enter to start CoM tracking")
 for i in range(-N_pre, N + N_post):
     time_start = time.time()
     
-    # Handle contact phase changes (only during main trajectory)
-    if i > 0 and i < N - 1 and contact_phase[i] != contact_phase[i-1]:
-        print(f"Time {t:.3f} Changing contact phase from {contact_phase[i-1]} to {contact_phase[i]}")
-        if contact_phase[i] == "left":
-            tsid_biped.add_contact_LF()
-            tsid_biped.remove_contact_RF()
-        elif contact_phase[i] == "double":
-            tsid_biped.add_contact_LF()
-            tsid_biped.add_contact_RF()
-    
-    # Set CoM reference based on phase
+    # Generate CoM reference in real-time based on current time
     if i < 0:
         # Preparation phase: hold initial position with zero velocity/acceleration
-        tsid_biped.set_com_ref(com_pos_ref[:, 0], 0 * com_vel_ref[:, 0], 0 * com_acc_ref[:, 0])
+        com_pos_ref_current = com_initial
+        com_vel_ref_current = np.zeros(3)
+        com_acc_ref_current = np.zeros(3)
+        contact_phase_current = "double"
     elif i < N:
-        # Main trajectory phase
-        tsid_biped.set_com_ref(com_pos_ref[:, i], com_vel_ref[:, i], com_acc_ref[:, i])
+        # Main trajectory phase - compute reference on-the-fly
+        t_traj = i * conf.dt  # Trajectory time (starts from 0)
+        
+        # Find which phase we're in
+        phase_idx = 0
+        for j in range(len(phase_durations)):
+            if t_traj < phase_end_times[j]:
+                phase_idx = j
+                break
+        
+        contact_phase_current = contact_patterns[phase_idx]
+        
+        # Generate CoM reference based on phase
+        if phase_idx == 0:  # Phase 1: Double support - move to left foot
+            local_time = t_traj
+            if local_time <= phase_durations[0]:
+                # Compute 3rd order polynomial trajectory for this phase
+                com_phase1_pos, com_phase1_vel, com_phase1_acc = compute_3rd_order_poly_traj(
+                    com_initial, com_above_left, phase_durations[0], conf.dt
+                )
+                local_idx = int(local_time / conf.dt)
+                if local_idx < com_phase1_pos.shape[1]:
+                    com_pos_ref_current = com_phase1_pos[:, local_idx]
+                    com_vel_ref_current = com_phase1_vel[:, local_idx]
+                    com_acc_ref_current = com_phase1_acc[:, local_idx]
+                else:
+                    com_pos_ref_current = com_above_left
+                    com_vel_ref_current = np.zeros(3)
+                    com_acc_ref_current = np.zeros(3)
+            else:
+                com_pos_ref_current = com_above_left
+                com_vel_ref_current = np.zeros(3)
+                com_acc_ref_current = np.zeros(3)
+                
+        elif phase_idx == 1:  # Phase 2: Left support - maintain position
+            com_pos_ref_current = com_above_left
+            com_vel_ref_current = np.zeros(3)
+            com_acc_ref_current = np.zeros(3)
+            
+        elif phase_idx == 2:  # Phase 3: Double support - move to middle
+            phase_start_time = phase_durations[0] + phase_durations[1]
+            local_time = t_traj - phase_start_time
+            
+            if local_time >= 0 and local_time <= phase_durations[2]:
+                # Compute 3rd order polynomial trajectory for this phase
+                com_phase3_pos, com_phase3_vel, com_phase3_acc = compute_3rd_order_poly_traj(
+                    com_above_left, com_middle, phase_durations[2], conf.dt
+                )
+                local_idx = int(local_time / conf.dt)
+                if local_idx < com_phase3_pos.shape[1]:
+                    com_pos_ref_current = com_phase3_pos[:, local_idx]
+                    com_vel_ref_current = com_phase3_vel[:, local_idx]
+                    com_acc_ref_current = com_phase3_acc[:, local_idx]
+                else:
+                    com_pos_ref_current = com_middle
+                    com_vel_ref_current = np.zeros(3)
+                    com_acc_ref_current = np.zeros(3)
+            else:
+                com_pos_ref_current = com_middle
+                com_vel_ref_current = np.zeros(3)
+                com_acc_ref_current = np.zeros(3)
+        else:
+            com_pos_ref_current = com_middle
+            com_vel_ref_current = np.zeros(3)
+            com_acc_ref_current = np.zeros(3)
     else:
         # Stabilization phase: hold final position with zero velocity/acceleration
-        final_idx = N - 1
-        tsid_biped.set_com_ref(com_pos_ref[:, final_idx], 0 * com_vel_ref[:, final_idx], 0 * com_acc_ref[:, final_idx])
+        com_pos_ref_current = com_middle
+        com_vel_ref_current = np.zeros(3)
+        com_acc_ref_current = np.zeros(3)
+        contact_phase_current = "double"
+    
+    # Handle contact phase changes (only during main trajectory)
+    if i > 0 and i < N - 1:
+        # Get previous phase for comparison
+        t_prev = (i-1) * conf.dt
+        phase_idx_prev = 0
+        for j in range(len(phase_durations)):
+            if t_prev < phase_end_times[j]:
+                phase_idx_prev = j
+                break
+        contact_phase_prev = contact_patterns[phase_idx_prev]
+        
+        if contact_phase_current != contact_phase_prev:
+            print(f"Time {t:.3f} Changing contact phase from {contact_phase_prev} to {contact_phase_current}")
+            if contact_phase_current == "left":
+                tsid_biped.add_contact_LF()
+                tsid_biped.remove_contact_RF()
+            elif contact_phase_current == "double":
+                tsid_biped.add_contact_LF()
+                tsid_biped.add_contact_RF()
+    
+    # Set CoM reference
+    tsid_biped.set_com_ref(com_pos_ref_current, com_vel_ref_current, com_acc_ref_current)
     
     # Set foot references
     # tsid_biped.set_RF_3d_ref(x_RF_ref[:, i], dx_RF_ref[:, i], ddx_RF_ref[:, i])
@@ -251,14 +252,13 @@ for i in range(-N_pre, N + N_post):
         current_com_vel = tsid_biped.robot.com_vel(tsid_biped.formulation.data())
         print("Time %.3f" % (t))
         if i >= 0 and i < N:
-            print(f"  CoM ref: [{com_pos_ref[0,i]:.3f}, {com_pos_ref[1,i]:.3f}, {com_pos_ref[2,i]:.3f}]")
-            print(f"  CoM vel ref: [{com_vel_ref[0,i]:.3f}, {com_vel_ref[1,i]:.3f}, {com_vel_ref[2,i]:.3f}]")
+            print(f"  CoM ref: [{com_pos_ref_current[0]:.3f}, {com_pos_ref_current[1]:.3f}, {com_pos_ref_current[2]:.3f}]")
+            print(f"  CoM vel ref: [{com_vel_ref_current[0]:.3f}, {com_vel_ref_current[1]:.3f}, {com_vel_ref_current[2]:.3f}]")
         elif i < 0:
-            print(f"  CoM ref: [{com_pos_ref[0,0]:.3f}, {com_pos_ref[1,0]:.3f}, {com_pos_ref[2,0]:.3f}] (prep)")
+            print(f"  CoM ref: [{com_pos_ref_current[0]:.3f}, {com_pos_ref_current[1]:.3f}, {com_pos_ref_current[2]:.3f}] (prep)")
             print(f"  CoM vel ref: [0.000, 0.000, 0.000] (prep)")
         else:
-            final_idx = N - 1
-            print(f"  CoM ref: [{com_pos_ref[0,final_idx]:.3f}, {com_pos_ref[1,final_idx]:.3f}, {com_pos_ref[2,final_idx]:.3f}] (stab)")
+            print(f"  CoM ref: [{com_pos_ref_current[0]:.3f}, {com_pos_ref_current[1]:.3f}, {com_pos_ref_current[2]:.3f}] (stab)")
             print(f"  CoM vel ref: [0.000, 0.000, 0.000] (stab)")
         print(f"  CoM actual: [{current_com[0]:.3f}, {current_com[1]:.3f}, {current_com[2]:.3f}]")
         print(f"  CoM vel actual: [{current_com_vel[0]:.3f}, {current_com_vel[1]:.3f}, {current_com_vel[2]:.3f}]")
