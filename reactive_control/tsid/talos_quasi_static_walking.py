@@ -128,20 +128,12 @@ com_initial[2] = CoM_Height  # Set desired height
 print("com_initial: ", com_initial)
 print("lf current: ", lf_current)
 print("rf current: ", rf_current)
-com_above_left = com_initial.copy()
-com_above_left[0] = lf_current[0]  # X position of left foot
-com_above_left[1] = lf_current[1]  # Y position of left foot
-
-com_middle = com_initial.copy()  # Return to middle between feet
-com_x_offset = 0.0
-com_middle[0] = (lf_current[0] + rf_current[0]) / 2 + com_x_offset
-com_middle[1] = (lf_current[1] + rf_current[1]) / 2
 
 # Stepping parameters
-step_height = 0.12  # Maximum foot lift height
+step_height = 0.05  # Maximum foot lift height (reduced from 0.12 to 0.05)
 stride_length = 0.1  # Forward step distance
-swing_foot_initial_pos = rf_current.copy()  # Right foot will be the swing foot
-stance_foot_pos = lf_current.copy()  # Left foot is stance foot
+# swing_foot_initial_pos = rf_current.copy()  # Right foot will be the swing foot
+# stance_foot_pos = lf_current.copy()  # Left foot is stance foot
 
 print("CoM trajectory setup completed!")
 
@@ -203,31 +195,17 @@ for i in range(-N_pre, N + N_post):
             phase_start_time += phase_durations[j]
         local_time = t_within_step - phase_start_time
         
-        # Get current foot positions based on completed steps
-        current_lf_pos = initial_lf_position.copy()
-        current_rf_pos = initial_rf_position.copy()
-        
-        # Update foot positions based on completed footsteps
-        for step in range(min(current_step, Num_Steps)):
-            # Determine which foot swings for this step
-            if first_swing_foot == "left":
-                step_swing_foot = "left" if step % 2 == 0 else "right"
-            else:
-                step_swing_foot = "right" if step % 2 == 0 else "left"
-            
-            # Update the position of the foot that swung in this step
-            if step_swing_foot == "left":
-                current_lf_pos = footstep_plan[step].copy()
-            else:
-                current_rf_pos = footstep_plan[step].copy()
+        # Get current foot positions from robot state
+        current_lf_pos = tsid_biped.get_placement_LF().translation.copy()
+        current_rf_pos = tsid_biped.get_placement_RF().translation.copy()
         
         # Determine stance foot position for current step
         if swing_foot == "left":
             stance_foot_pos = current_rf_pos.copy()
-            stance_foot_pos[2] = CoM_Height
+            # Keep stance foot at ground level
         else:
             stance_foot_pos = current_lf_pos.copy()
-            stance_foot_pos[2] = CoM_Height
+            # Keep stance foot at ground level
         
         # Get target CoM position for current step
         if current_step < Num_Steps:
@@ -244,8 +222,12 @@ for i in range(-N_pre, N + N_post):
                 else:
                     com_start = CoM_Positions[current_step - 1].copy()
                 
+                # CoM target should be above stance foot at CoM height
+                com_target = stance_foot_pos.copy()
+                com_target[2] = CoM_Height
+                
                 com_phase_pos, com_phase_vel, com_phase_acc = compute_3rd_order_poly_traj(
-                    com_start, stance_foot_pos, phase_durations[0], conf.dt
+                    com_start, com_target, phase_durations[0], conf.dt
                 )
                 local_idx = int(local_time / conf.dt)
                 if local_idx < com_phase_pos.shape[1]:
@@ -253,24 +235,32 @@ for i in range(-N_pre, N + N_post):
                     com_vel_ref_current = com_phase_vel[:, local_idx]
                     com_acc_ref_current = com_phase_acc[:, local_idx]
                 else:
-                    com_pos_ref_current = stance_foot_pos
+                    com_pos_ref_current = com_target
                     com_vel_ref_current = np.zeros(3)
                     com_acc_ref_current = np.zeros(3)
             else:
-                com_pos_ref_current = stance_foot_pos
+                com_target = stance_foot_pos.copy()
+                com_target[2] = CoM_Height
+                com_pos_ref_current = com_target
                 com_vel_ref_current = np.zeros(3)
                 com_acc_ref_current = np.zeros(3)
                 
         elif phase_idx == 1:  # Phase 2: Single support - swing foot
             # CoM stays over stance foot during swing
-            com_pos_ref_current = stance_foot_pos
+            com_target = stance_foot_pos.copy()
+            com_target[2] = CoM_Height
+            com_pos_ref_current = com_target
             com_vel_ref_current = np.zeros(3)
             com_acc_ref_current = np.zeros(3)
             
         elif phase_idx == 2:  # Phase 3: Double support - move CoM to target position
             if local_time >= 0 and local_time <= phase_durations[2]:
+                # Start from CoM above stance foot
+                com_start = stance_foot_pos.copy()
+                com_start[2] = CoM_Height
+                
                 com_phase_pos, com_phase_vel, com_phase_acc = compute_3rd_order_poly_traj(
-                    stance_foot_pos, target_com_pos, phase_durations[2], conf.dt
+                    com_start, target_com_pos, phase_durations[2], conf.dt
                 )
                 local_idx = int(local_time / conf.dt)
                 if local_idx < com_phase_pos.shape[1]:
@@ -373,24 +363,49 @@ for i in range(-N_pre, N + N_post):
                 # Calculate stride length for this step
                 step_stride = np.linalg.norm(swing_target_pos[:2] - swing_initial_pos[:2])
                 
+                # Generate swing foot trajectory with proper landing at target position
                 swing_foot_pos, swing_foot_vel, swing_foot_acc = generate_swing_foot_trajectory(
                     swing_initial_pos, step_stride, step_height, swing_duration, local_time
                 )
                 
-                # Adjust trajectory to reach target position
+                # Adjust trajectory to reach target position in all dimensions
                 progress = local_time / swing_duration
+                
+                # X and Y coordinates: linear interpolation to target
                 swing_foot_pos[:2] = swing_initial_pos[:2] + progress * (swing_target_pos[:2] - swing_initial_pos[:2])
+                
+                # Z coordinate: modify the trajectory to land at target z
+                # The generate_swing_foot_trajectory assumes landing at initial_pos[2]
+                # We need to adjust it to land at swing_target_pos[2]
+                z_offset = swing_target_pos[2] - swing_initial_pos[2]
+                
+                # Apply the z offset with proper scaling based on trajectory phase
+                if local_time <= swing_duration / 3.0:
+                    # Lift phase: add offset proportionally
+                    swing_foot_pos[2] += z_offset * progress * 3.0  # Scale by 3 since we're in first third
+                elif local_time <= 2.0 * swing_duration / 3.0:
+                    # Forward phase: maintain offset
+                    swing_foot_pos[2] += z_offset
+                else:
+                    # Landing phase: the trajectory should naturally land at target
+                    swing_foot_pos[2] += z_offset
                 
                 if swing_foot == "left":
                     tsid_biped.set_LF_3d_ref(swing_foot_pos, swing_foot_vel, swing_foot_acc)
                     # Debug print for left foot trajectory
-                    if i % 100 == 0:
+                    if i % 50 == 0:  # More frequent debug prints
                         print(f"  Setting LF ref: [{swing_foot_pos[0]:.3f}, {swing_foot_pos[1]:.3f}, {swing_foot_pos[2]:.3f}], progress={progress:.3f}")
+                        print(f"    Initial: [{swing_initial_pos[0]:.3f}, {swing_initial_pos[1]:.3f}, {swing_initial_pos[2]:.3f}]")
+                        print(f"    Target:  [{swing_target_pos[0]:.3f}, {swing_target_pos[1]:.3f}, {swing_target_pos[2]:.3f}]")
+                        print(f"    Z offset: {z_offset:.3f}")
                 else:
                     tsid_biped.set_RF_3d_ref(swing_foot_pos, swing_foot_vel, swing_foot_acc)
                     # Debug print for right foot trajectory
-                    if i % 100 == 0:
+                    if i % 50 == 0:  # More frequent debug prints
                         print(f"  Setting RF ref: [{swing_foot_pos[0]:.3f}, {swing_foot_pos[1]:.3f}, {swing_foot_pos[2]:.3f}], progress={progress:.3f}")
+                        print(f"    Initial: [{swing_initial_pos[0]:.3f}, {swing_initial_pos[1]:.3f}, {swing_initial_pos[2]:.3f}]")
+                        print(f"    Target:  [{swing_target_pos[0]:.3f}, {swing_target_pos[1]:.3f}, {swing_target_pos[2]:.3f}]")
+                        print(f"    Z offset: {z_offset:.3f}")
             else:
                 # End of swing - foot at target position
                 if swing_foot == "left":
