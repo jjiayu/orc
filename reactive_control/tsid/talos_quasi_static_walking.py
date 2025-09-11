@@ -16,6 +16,7 @@ print("".center(conf.LINE_WIDTH, "#"))
 print(" Test Walking ".center(conf.LINE_WIDTH, "#"))
 print("".center(conf.LINE_WIDTH, "#"), "\n")
 
+CoM_Height = 0.6
 
 USE_EIQUADPROG = 1
 USE_PROXQP = 0
@@ -92,7 +93,7 @@ rf_current = tsid_biped.get_placement_RF().translation
 
 # Define CoM target positions for each phase based on current robot state
 com_initial = tsid_biped.robot.com(tsid_biped.formulation.data())  # Current CoM position
-com_initial[2] = 0.65  # Set desired height
+com_initial[2] = CoM_Height  # Set desired height
 print("com_initial: ", com_initial)
 print("lf current: ", lf_current)
 print("rf current: ", rf_current)
@@ -101,7 +102,8 @@ com_above_left[0] = lf_current[0]  # X position of left foot
 com_above_left[1] = lf_current[1]  # Y position of left foot
 
 com_middle = com_initial.copy()  # Return to middle between feet
-com_middle[0] = (lf_current[0] + rf_current[0]) / 2
+com_x_offset = 0.021
+com_middle[0] = (lf_current[0] + rf_current[0]) / 2 + com_x_offset
 com_middle[1] = (lf_current[1] + rf_current[1]) / 2
 
 for i in range(int(N)):
@@ -193,13 +195,13 @@ qp_data_list = []
 # c = 0
 q_list = []
 
-# Simple CoM tracking loop
+# Simple CoM tracking loop with preparation and stabilization phases
 input("Press enter to start CoM tracking")
-for i in range(N):
+for i in range(-N_pre, N + N_post):
     time_start = time.time()
     
-    # Handle contact phase changes
-    if i > 0 and contact_phase[i] != contact_phase[i-1]:
+    # Handle contact phase changes (only during main trajectory)
+    if i > 0 and i < N - 1 and contact_phase[i] != contact_phase[i-1]:
         print(f"Time {t:.3f} Changing contact phase from {contact_phase[i-1]} to {contact_phase[i]}")
         if contact_phase[i] == "left":
             tsid_biped.add_contact_LF()
@@ -208,8 +210,17 @@ for i in range(N):
             tsid_biped.add_contact_LF()
             tsid_biped.add_contact_RF()
     
-    # Set CoM reference for this time step
-    tsid_biped.set_com_ref(com_pos_ref[:, i], com_vel_ref[:, i], com_acc_ref[:, i])
+    # Set CoM reference based on phase
+    if i < 0:
+        # Preparation phase: hold initial position with zero velocity/acceleration
+        tsid_biped.set_com_ref(com_pos_ref[:, 0], 0 * com_vel_ref[:, 0], 0 * com_acc_ref[:, 0])
+    elif i < N:
+        # Main trajectory phase
+        tsid_biped.set_com_ref(com_pos_ref[:, i], com_vel_ref[:, i], com_acc_ref[:, i])
+    else:
+        # Stabilization phase: hold final position with zero velocity/acceleration
+        final_idx = N - 1
+        tsid_biped.set_com_ref(com_pos_ref[:, final_idx], 0 * com_vel_ref[:, final_idx], 0 * com_acc_ref[:, final_idx])
     
     # Set foot references
     # tsid_biped.set_RF_3d_ref(x_RF_ref[:, i], dx_RF_ref[:, i], ddx_RF_ref[:, i])
@@ -228,17 +239,29 @@ for i in range(N):
     # Get accelerations and integrate
     dv = tsid_biped.formulation.getAccelerations(sol)
     
-    # Log data
-    com_pos[:, i] = tsid_biped.robot.com(tsid_biped.formulation.data())
-    com_vel[:, i] = tsid_biped.robot.com_vel(tsid_biped.formulation.data())
-    com_acc[:, i] = tsid_biped.comTask.getAcceleration(dv)
+    # Log data (only for non-negative indices)
+    if i >= 0:
+        com_pos[:, i] = tsid_biped.robot.com(tsid_biped.formulation.data())
+        com_vel[:, i] = tsid_biped.robot.com_vel(tsid_biped.formulation.data())
+        com_acc[:, i] = tsid_biped.comTask.getAcceleration(dv)
     
     # Print progress
     if i % 100 == 0:
         current_com = tsid_biped.robot.com(tsid_biped.formulation.data())
+        current_com_vel = tsid_biped.robot.com_vel(tsid_biped.formulation.data())
         print("Time %.3f" % (t))
-        print(f"  CoM ref: [{com_pos_ref[0,i]:.3f}, {com_pos_ref[1,i]:.3f}, {com_pos_ref[2,i]:.3f}]")
+        if i >= 0 and i < N:
+            print(f"  CoM ref: [{com_pos_ref[0,i]:.3f}, {com_pos_ref[1,i]:.3f}, {com_pos_ref[2,i]:.3f}]")
+            print(f"  CoM vel ref: [{com_vel_ref[0,i]:.3f}, {com_vel_ref[1,i]:.3f}, {com_vel_ref[2,i]:.3f}]")
+        elif i < 0:
+            print(f"  CoM ref: [{com_pos_ref[0,0]:.3f}, {com_pos_ref[1,0]:.3f}, {com_pos_ref[2,0]:.3f}] (prep)")
+            print(f"  CoM vel ref: [0.000, 0.000, 0.000] (prep)")
+        else:
+            final_idx = N - 1
+            print(f"  CoM ref: [{com_pos_ref[0,final_idx]:.3f}, {com_pos_ref[1,final_idx]:.3f}, {com_pos_ref[2,final_idx]:.3f}] (stab)")
+            print(f"  CoM vel ref: [0.000, 0.000, 0.000] (stab)")
         print(f"  CoM actual: [{current_com[0]:.3f}, {current_com[1]:.3f}, {current_com[2]:.3f}]")
+        print(f"  CoM vel actual: [{current_com_vel[0]:.3f}, {current_com_vel[1]:.3f}, {current_com_vel[2]:.3f}]")
         print(f"  Tracking error: {norm(tsid_biped.comTask.position_error, 2):.3f}")
         print(f"  ||v||: {norm(v, 2):.3f}, ||dv||: {norm(dv):.3f}")
     

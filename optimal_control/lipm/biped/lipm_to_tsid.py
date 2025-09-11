@@ -42,10 +42,26 @@ def discrete_LIP_dynamics(delta_t, g, h):
 #        d = 2 (x0-x1) / T^3
 # c = -(3/2) T 2 (x0-x1) / (T^3) = 3 (x1-x0) / T^2
 def compute_3rd_order_poly_traj(x0, x1, T, dt):
+    # 5th order polynomial with zero velocity at start and end
+    # x(t) = a + b*t + c*t^2 + d*t^3 + e*t^4 + f*t^5
+    # Boundary conditions:
+    # x(0) = x0, dx(0) = 0, x(T) = x1, dx(T) = 0
+    # ddx(0) = 0, ddx(T) = 0 (smooth acceleration)
+    
     a = x0
-    b = np.zeros_like(x0)
-    c = 3*(x1-x0) / (T**2)
-    d = 2*(x0-x1) / (T**3)
+    b = np.zeros_like(x0)  # dx(0) = 0
+    c = np.zeros_like(x0)  # ddx(0) = 0
+    
+    # Solve for d, e, f using remaining boundary conditions
+    # x(T) = x0 + d*T^3 + e*T^4 + f*T^5 = x1
+    # dx(T) = 3*d*T^2 + 4*e*T^3 + 5*f*T^4 = 0
+    # ddx(T) = 6*d*T + 12*e*T^2 + 20*f*T^3 = 0
+    
+    # From the system of equations:
+    d = 10*(x1-x0) / (T**3)
+    e = -15*(x1-x0) / (T**4)
+    f = 6*(x1-x0) / (T**5)
+    
     N = int(T/dt)
     n = x0.shape[0]
     x = np.zeros((n,N))
@@ -53,9 +69,9 @@ def compute_3rd_order_poly_traj(x0, x1, T, dt):
     ddx = np.zeros((n,N))
     for i in range(N):
         t = i*dt
-        x[:,i]   = a + b*t + c*t**2 + d*t**3
-        dx[:,i]  = b + 2*c*t + 3*d*t**2
-        ddx[:,i] = 2*c + 6*d*t
+        x[:,i]   = a + b*t + c*t**2 + d*t**3 + e*t**4 + f*t**5
+        dx[:,i]  = b + 2*c*t + 3*d*t**2 + 4*e*t**3 + 5*f*t**4
+        ddx[:,i] = 2*c + 6*d*t + 12*e*t**2 + 20*f*t**3
     return x, dx, ddx
 
 
