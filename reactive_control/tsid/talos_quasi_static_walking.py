@@ -333,49 +333,6 @@ input("Press enter to start CoM tracking")
 for i in range(-N_pre, N + N_post):
     time_start = time.time()
     
-    # NEW INTERPOLATION-BASED REFERENCE GENERATION
-    if i < 0:
-        # Preparation phase: hold initial position with zero velocity/acceleration
-        com_pos_ref_current = current_com.copy()
-        com_vel_ref_current = np.zeros(3)
-        com_acc_ref_current = np.zeros(3)
-        lf_pos_ref_current = current_lf_pos.copy()
-        rf_pos_ref_current = current_rf_pos.copy()
-        lf_vel_ref_current = np.zeros(3)
-        rf_vel_ref_current = np.zeros(3)
-        lf_acc_ref_current = np.zeros(3)
-        rf_acc_ref_current = np.zeros(3)
-        contact_phase_current = "double"
-    elif i < N:
-        # Main trajectory phase - use interpolation between start/end positions
-        t_traj = i * conf.dt  # Trajectory time (starts from 0)
-        
-        # Find which phase we're currently in
-        cumulative_time = 0
-        current_phase_idx = 0
-        phase_start_time = 0
-        
-        for phase_idx in range(len(phase_durations)):
-            phase_end_time = cumulative_time + phase_durations[phase_idx]
-            if t_traj < phase_end_time:
-                current_phase_idx = phase_idx
-                phase_start_time = cumulative_time
-                break
-            cumulative_time = phase_end_time
-        
-        # Ensure we don't exceed the available phases
-        if current_phase_idx >= len(gait_pattern):
-            current_phase_idx = len(gait_pattern) - 1
-            phase_start_time = cumulative_time - phase_durations[current_phase_idx]
-        
-        # Calculate local time within current phase
-        local_time = t_traj - phase_start_time
-        phase_duration = phase_durations[current_phase_idx]
-        progress = min(1.0, max(0.0, local_time / phase_duration))  # Clamp between 0 and 1
-        
-        # Get contact pattern for current phase
-        contact_phase_current = gait_pattern[current_phase_idx]
-        
     # Handle contact phase changes
     if i == 0:
         print("Starting to walk")
@@ -439,8 +396,28 @@ for i in range(-N_pre, N + N_post):
     if i % conf.PRINT_N == 0:
         print(f"Time {t:.3f}")
         if i >= 0 and i < N:
-            print(f"  Contact: {contact_pattern[i]}")
+            # Contact status
+            lf_contact = "ACTIVE" if tsid_biped.contact_LF_active else "INACTIVE"
+            rf_contact = "ACTIVE" if tsid_biped.contact_RF_active else "INACTIVE"
+            print(f"  Contact pattern: {contact_pattern[i]} | LF: {lf_contact} | RF: {rf_contact}")
+            
+            # CoM target vs actual
+            com_target = com_pos_traj[:, i]
+            com_actual = tsid_biped.robot.com(tsid_biped.formulation.data())
+            print(f"  CoM target:  [{com_target[0]:.3f}, {com_target[1]:.3f}, {com_target[2]:.3f}]")
+            print(f"  CoM actual:  [{com_actual[0]:.3f}, {com_actual[1]:.3f}, {com_actual[2]:.3f}]")
             print(f"  CoM tracking error: {norm(tsid_biped.comTask.position_error, 2):.3f}")
+            
+            # Foot targets vs actual
+            lf_target = lf_pos_traj[:, i]
+            rf_target = rf_pos_traj[:, i]
+            lf_actual = tsid_biped.get_placement_LF().translation
+            rf_actual = tsid_biped.get_placement_RF().translation
+            print(f"  LF target:   [{lf_target[0]:.3f}, {lf_target[1]:.3f}, {lf_target[2]:.3f}]")
+            print(f"  LF actual:   [{lf_actual[0]:.3f}, {lf_actual[1]:.3f}, {lf_actual[2]:.3f}]")
+            print(f"  RF target:   [{rf_target[0]:.3f}, {rf_target[1]:.3f}, {rf_target[2]:.3f}]")
+            print(f"  RF actual:   [{rf_actual[0]:.3f}, {rf_actual[1]:.3f}, {rf_actual[2]:.3f}]")
+            
         print(f"  ||v||: {norm(v, 2):.3f}, ||dv||: {norm(dv):.3f}")
     
     # Integrate dynamics
