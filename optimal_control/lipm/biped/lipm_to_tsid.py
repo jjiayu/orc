@@ -41,7 +41,7 @@ def discrete_LIP_dynamics(delta_t, g, h):
 #        -0.5 d T^3 = x1 - x0
 #        d = 2 (x0-x1) / T^3
 # c = -(3/2) T 2 (x0-x1) / (T^3) = 3 (x1-x0) / T^2
-def compute_3rd_order_poly_traj(x0, x1, T, dt):
+def compute_5th_order_poly_traj(x0, x1, T, dt):
     # 5th order polynomial with zero velocity at start and end
     # x(t) = a + b*t + c*t^2 + d*t^3 + e*t^4 + f*t^5
     # Boundary conditions:
