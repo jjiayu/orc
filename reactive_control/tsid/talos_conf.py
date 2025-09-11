@@ -23,7 +23,7 @@ lyn = 0.065                                  # foot length in negative y directi
 lz = 0.                                     # foot sole height with respect to ankle joint
 mu = 0.3                                    # friction coefficient
 fMin = 5.0                                  # minimum normal force
-fMax = 1000.0                               # maximum normal force
+fMax = 1e6                               # maximum normal force
 rf_frame_name = "leg_right_sole_fix_joint"  # right foot frame name
 lf_frame_name = "leg_left_sole_fix_joint"   # left foot frame name
 contactNormal = np.array([0., 0., 1.])      # direction of the normal to the contact surface
@@ -88,6 +88,7 @@ kp_posture = 1.0        # proportional gain of joint posture task
 
 from pinocchio.visualize import MeshcatVisualizer
 viewer = MeshcatVisualizer
+
 PRINT_N = 500           # print every PRINT_N time steps
 DISPLAY_N = 4          # update robot configuration in viwewer every DISPLAY_N time steps
 CAMERA_TRANSFORM = [4.0, -0.2, 0.4, 0.5243823528289795, 0.518651008605957, 0.4620114266872406, 0.4925136864185333]

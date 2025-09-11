@@ -1,13 +1,14 @@
 import time
 
-# import orc.optimal_control.lipm.biped.romeo_conf as conf
-import talos_conf as conf
+import orc.optimal_control.lipm.biped.romeo_conf as conf
+# import talos_conf as conf
 import matplotlib.pyplot as plt
 import numpy as np
 import orc.utils.plot_utils as plut
 from numpy import nan
 from numpy.linalg import norm as norm
 from tsid_biped import TsidBiped
+from orc.optimal_control.lipm.biped.lipm_to_tsid import compute_3rd_order_poly_traj
 
 import tsid
 
@@ -27,36 +28,12 @@ PLOT_FOOT_TRAJ = 0
 PLOT_TORQUES = 0
 PLOT_JOINT_VEL = 0
 
-try:
-    data = np.load(conf.DATA_FILE_TSID)
-except FileNotFoundError as e:
-    print("To run this walking example, you need to first execute lipm/lipm_ocp.py and lipm/lipm_to_tsid.py")
-    raise e
-
 tsid_biped = TsidBiped(conf, conf.viewer)
 
 # overwrite the default solver
 if USE_EIQUADPROG:
     print("Using eiquadprog")
     tsid_biped.solver = tsid.SolverHQuadProgFast("qp solver")
-
-elif USE_PROXQP:
-    print("Using proxqp")
-    tsid_biped.solver = tsid.SolverProxQP("qp solver")
-    tsid_biped.solver.set_epsilon_absolute(1e-5)
-    tsid_biped.solver.set_maximum_iterations(int(1e6))
-    tsid_biped.solver.set_verbose(VERBOSE)
-
-elif USE_OSQP:
-    print("Using osqp")
-    tsid_biped.solver = tsid.SolverOSQP("qp solver")
-    tsid_biped.solver.set_epsilon_absolute(1e-8)
-    tsid_biped.solver.set_maximum_iterations(int(1e6))
-    tsid_biped.solver.set_verbose(VERBOSE)
-
-else:
-    print("Please specify which solver to use.")
-    exit()
 
 tsid_biped.solver.resize(
     tsid_biped.formulation.nVar, tsid_biped.formulation.nEq, tsid_biped.formulation.nIn
@@ -67,8 +44,13 @@ q, v = tsid_biped.q, tsid_biped.v
 tsid_biped.display(q)
 time.sleep(1.0)
 
+#define contact pattern
+contact_patterns = ["double", "left", "double"] #variables mean contact configuration
+phase_durations = np.array([3.0, 3.0, 3.0])
+stride_length = 0.1
+
 #Let us just make one step
-N = 1500 #data["com"].shape[1] #Number of Time steps, means 3s duration
+N = int(np.sum(phase_durations)/conf.dt) #1500 #data["com"].shape[1] #Number of Time steps, means 3s duration
 N_pre = int(conf.T_pre / conf.dt)
 N_post = int(conf.T_post / conf.dt)
 
@@ -92,68 +74,117 @@ tau = np.zeros((tsid_biped.robot.na, N + N_post))
 q_log = np.zeros((tsid_biped.robot.nq, N + N_post))
 v_log = np.zeros((tsid_biped.robot.nv, N + N_post))
 
-# Create custom contact phase sequence with double support
-# Original data has only single support phases
-original_contact_phase = data["contact_phase"]
+# Simple Planning - all computations in loop
 
-# Create new contact phase sequence with double support transitions
+# Initialize arrays
+com_pos_ref = np.zeros((3, int(N)))
+com_vel_ref = np.zeros((3, int(N)))
+com_acc_ref = np.zeros((3, int(N)))
 contact_phase = []
-for i in range(N):
-    # if i < 300:  # Initial double support (0.3s)
-    contact_phase.append("double")
 
-# Create custom CoM reference trajectory - move 10cm to the left
-original_com_pos_ref = np.asarray(data["com"])
-com_pos_ref = np.zeros((3, N))
-com_vel_ref = np.zeros((3, N))
-com_acc_ref = np.zeros((3, N))
+# Phase timing setup
+phase_start_times = np.cumsum(np.concatenate([[0], phase_durations[:-1]]))
+phase_end_times = np.cumsum(phase_durations)
 
-# Get initial CoM position
-com_initial = original_com_pos_ref[:, 0].copy()
-com_target = com_initial.copy()
-com_target[1] += 0.20  # Move 10cm to the left (positive Y direction)
+# Get current robot foot positions
+lf_current = tsid_biped.get_placement_LF().translation
+rf_current = tsid_biped.get_placement_RF().translation
 
-# Create smooth trajectory using cosine interpolation
-for i in range(N):
-    progress = i / (N - 1)  # 0 to 1
+# Define CoM target positions for each phase based on current robot state
+com_initial = tsid_biped.robot.com(tsid_biped.formulation.data())  # Current CoM position
+com_initial[2] = 0.65  # Set desired height
+print("com_initial: ", com_initial)
+print("lf current: ", lf_current)
+print("rf current: ", rf_current)
+com_above_left = com_initial.copy()
+com_above_left[0] = lf_current[0]  # X position of left foot
+com_above_left[1] = lf_current[1]  # Y position of left foot
+
+com_middle = com_initial.copy()  # Return to middle between feet
+com_middle[0] = (lf_current[0] + rf_current[0]) / 2
+com_middle[1] = (lf_current[1] + rf_current[1]) / 2
+
+for i in range(int(N)):
+    t = i * conf.dt
     
-    # Smooth interpolation using cosine function
-    smooth_progress = (1 - np.cos(np.pi * progress)) / 2
+    # Find which phase we're in
+    phase_idx = 0
+    for j in range(len(phase_durations)):
+        if t < phase_end_times[j]:
+            phase_idx = j
+            break
     
-    # Position: interpolate from initial to target
-    com_pos_ref[:, i] = com_initial + smooth_progress * (com_target - com_initial)
+    contact_phase.append(contact_patterns[phase_idx])
     
-    # Velocity: derivative of position
-    if i < N - 1:
-        dt = conf.dt
-        vel_factor = np.pi * np.sin(np.pi * progress) / (2 * (N - 1) * dt)
-        com_vel_ref[:, i] = vel_factor * (com_target - com_initial)
+    # Generate CoM reference based on phase
+    if phase_idx == 0:  # Phase 1: Double support - shift to left foot
+        # Calculate local time within this phase
+        phase_start_time = 0.0
+        local_time = t - phase_start_time
+        
+        if local_time <= phase_durations[0]:
+            # Compute 3rd order polynomial trajectory for this phase
+            com_phase1_pos, com_phase1_vel, com_phase1_acc = compute_3rd_order_poly_traj(
+                com_initial, com_above_left, phase_durations[0], conf.dt
+            )
+            local_idx = int(local_time / conf.dt)
+            if local_idx < com_phase1_pos.shape[1]:
+                com_pos_ref[:, i] = com_phase1_pos[:, local_idx]
+                com_vel_ref[:, i] = com_phase1_vel[:, local_idx]
+                com_acc_ref[:, i] = com_phase1_acc[:, local_idx]
+            else:
+                com_pos_ref[:, i] = com_above_left
+                com_vel_ref[:, i] = np.zeros(3)
+                com_acc_ref[:, i] = np.zeros(3)
+        else:
+            # End of phase - maintain final position
+            com_pos_ref[:, i] = com_above_left
+            com_vel_ref[:, i] = np.zeros(3)
+            com_acc_ref[:, i] = np.zeros(3)
+        
+    elif phase_idx == 1:  # Phase 2: Left support - maintain position
+        com_pos_ref[:, i] = com_above_left
+        com_vel_ref[:, i] = np.zeros(3)
+        com_acc_ref[:, i] = np.zeros(3)
+        
+    elif phase_idx == 2:  # Phase 3: Double support - move to middle
+        # Calculate local time within this phase
+        phase_start_time = phase_durations[0] + phase_durations[1]
+        local_time = t - phase_start_time
+        
+        if local_time >= 0 and local_time <= phase_durations[2]:
+            # Compute 3rd order polynomial trajectory for this phase
+            com_phase3_pos, com_phase3_vel, com_phase3_acc = compute_3rd_order_poly_traj(
+                com_above_left, com_middle, phase_durations[2], conf.dt
+            )
+            local_idx = int(local_time / conf.dt)
+            if local_idx < com_phase3_pos.shape[1]:
+                com_pos_ref[:, i] = com_phase3_pos[:, local_idx]
+                com_vel_ref[:, i] = com_phase3_vel[:, local_idx]
+                com_acc_ref[:, i] = com_phase3_acc[:, local_idx]
+            else:
+                com_pos_ref[:, i] = com_middle
+                com_vel_ref[:, i] = np.zeros(3)
+                com_acc_ref[:, i] = np.zeros(3)
+        else:
+            # End of phase - maintain final position
+            com_pos_ref[:, i] = com_middle
+            com_vel_ref[:, i] = np.zeros(3)
+            com_acc_ref[:, i] = np.zeros(3)
     
-    # Acceleration: derivative of velocity  
-    if i < N - 1:
-        acc_factor = (np.pi ** 2) * np.cos(np.pi * progress) / (2 * ((N - 1) * dt) ** 2)
-        com_acc_ref[:, i] = acc_factor * (com_target - com_initial)
+    else:
+        # Beyond all phases - maintain final position
+        com_pos_ref[:, i] = com_middle
+        com_vel_ref[:, i] = np.zeros(3)
+        com_acc_ref[:, i] = np.zeros(3)
 
+# # Apply offset to align with robot's current position
+# x_lf = tsid_biped.get_placement_LF().translation
+# offset = x_lf - x_LF_ref[:, 0]
+# for i in range(N):
+#     com_pos_ref[:, i] += offset + np.array([0.0, 0.0, 0.0])
 
-x_RF_ref = np.asarray(data["x_RF"])
-dx_RF_ref = np.asarray(data["dx_RF"])
-ddx_RF_ref = np.asarray(data["ddx_RF"])
-x_LF_ref = np.asarray(data["x_LF"])
-dx_LF_ref = np.asarray(data["dx_LF"])
-ddx_LF_ref = np.asarray(data["ddx_LF"])
-cop_ref = np.asarray(data["cop"])
-com_acc_des = (
-    np.empty((3, N + N_post)) * nan
-)  # acc_des = acc_ref - Kp*pos_err - Kd*vel_err
-
-x_rf = tsid_biped.get_placement_RF().translation
-offset = x_rf - x_RF_ref[:, 0]
-for i in range(N):
-    com_pos_ref[:, i] += offset + np.array([0.0, 0.0, 0.3])
-    x_RF_ref[:, i] += offset
-    x_LF_ref[:, i] += offset
-
-    print(com_pos_ref[:, i])
+print("CoM trajectory generated successfully!")
 
 t = -conf.T_pre
 q, v = tsid_biped.q, tsid_biped.v
@@ -167,8 +198,21 @@ input("Press enter to start CoM tracking")
 for i in range(N):
     time_start = time.time()
     
+    # Handle contact phase changes
+    if i > 0 and contact_phase[i] != contact_phase[i-1]:
+        print(f"Time {t:.3f} Changing contact phase from {contact_phase[i-1]} to {contact_phase[i]}")
+        if contact_phase[i] == "left":
+            tsid_biped.add_contact_LF()
+            tsid_biped.remove_contact_RF()
+        elif contact_phase[i] == "double":
+            tsid_biped.add_contact_LF()
+            tsid_biped.add_contact_RF()
+    
     # Set CoM reference for this time step
     tsid_biped.set_com_ref(com_pos_ref[:, i], com_vel_ref[:, i], com_acc_ref[:, i])
+    
+    # Set foot references
+    # tsid_biped.set_RF_3d_ref(x_RF_ref[:, i], dx_RF_ref[:, i], ddx_RF_ref[:, i])
     
     # Solve the QP problem
     HQPData = tsid_biped.formulation.computeProblemData(t, q, v)
