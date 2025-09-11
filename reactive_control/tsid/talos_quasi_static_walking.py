@@ -159,15 +159,11 @@ for phase_idx, contact_phase in enumerate(gait_pattern):
             rf_target = rf_pos.copy()
             
     else:  # phase_in_step == 2: Second double support phase
-        # CoM moves to midpoint between feet for next step preparation
-        if step_number + 1 < len(footstep_targets):
-            # Calculate midpoint between current feet positions for next step
-            midpoint = (lf_pos + rf_pos) / 2.0
-            com_target = midpoint.copy()
-            com_target[2] = CoM_Height
-        else:
-            # Final phase: stay at current position
-            com_target = com_pos.copy()
+        # CoM moves to midpoint between feet for stabilization
+        # Calculate midpoint between current feet positions
+        midpoint = (lf_pos + rf_pos) / 2.0
+        com_target = midpoint.copy()
+        com_target[2] = CoM_Height
             
         # Feet don't move during double support
         lf_target = lf_pos.copy()
