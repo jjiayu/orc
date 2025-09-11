@@ -17,6 +17,7 @@ print(" Test Walking ".center(conf.LINE_WIDTH, "#"))
 print("".center(conf.LINE_WIDTH, "#"), "\n")
 
 CoM_Height = 0.6
+step_height = 0.10
 
 USE_EIQUADPROG = 1
 USE_PROXQP = 0
@@ -195,7 +196,131 @@ N = int(total_duration / conf.dt)
 N_pre = int(conf.T_pre / conf.dt)
 N_post = int(conf.T_post / conf.dt)
 
+# Interpolate trajectories
 print(f"Total duration: {total_duration:.1f}s, N: {N}, N_pre: {N_pre}, N_post: {N_post}")
+
+# Initialize trajectory arrays
+com_pos_traj = np.zeros((3, N))
+com_vel_traj = np.zeros((3, N))
+com_acc_traj = np.zeros((3, N))
+lf_pos_traj = np.zeros((3, N))
+lf_vel_traj = np.zeros((3, N))
+lf_acc_traj = np.zeros((3, N))
+rf_pos_traj = np.zeros((3, N))
+rf_vel_traj = np.zeros((3, N))
+rf_acc_traj = np.zeros((3, N))
+contact_pattern = []
+
+# Generate trajectories for each phase
+time_idx = 0
+for phase_idx in range(len(gait_pattern)):
+    phase_duration = phase_durations[phase_idx]
+    N_phase = int(phase_duration / conf.dt)
+    contact_phase = gait_pattern[phase_idx]
+    
+    print(f"\nInterpolating Phase {phase_idx}: {contact_phase}, Duration: {phase_duration:.1f}s, N_phase: {N_phase}")
+    
+    # Get start and end positions for this phase
+    com_start = com_path[phase_idx][0]
+    com_end = com_path[phase_idx][1]
+    lf_start = lf_path[phase_idx][0]
+    lf_end = lf_path[phase_idx][1]
+    rf_start = rf_path[phase_idx][0]
+    rf_end = rf_path[phase_idx][1]
+    
+    # Generate CoM trajectory using 5th order polynomial
+    if np.allclose(com_start, com_end):
+        # No movement - constant position
+        com_pos_phase = np.tile(com_start.reshape(-1, 1), (1, N_phase))
+        com_vel_phase = np.zeros((3, N_phase))
+        com_acc_phase = np.zeros((3, N_phase))
+    else:
+        com_pos_phase, com_vel_phase, com_acc_phase = compute_5th_order_poly_traj(
+            com_start, com_end, phase_duration, conf.dt)
+    
+    # Generate foot trajectories based on contact phase
+    if contact_phase == "double":
+        # Both feet stay constant during double support
+        lf_pos_phase = np.tile(lf_start.reshape(-1, 1), (1, N_phase))
+        lf_vel_phase = np.zeros((3, N_phase))
+        lf_acc_phase = np.zeros((3, N_phase))
+        rf_pos_phase = np.tile(rf_start.reshape(-1, 1), (1, N_phase))
+        rf_vel_phase = np.zeros((3, N_phase))
+        rf_acc_phase = np.zeros((3, N_phase))
+        
+    elif contact_phase == "left":
+        # Left foot swings, right foot is stance (constant)
+        rf_pos_phase = np.tile(rf_start.reshape(-1, 1), (1, N_phase))
+        rf_vel_phase = np.zeros((3, N_phase))
+        rf_acc_phase = np.zeros((3, N_phase))
+        
+        # Generate swing trajectory for left foot
+        stride_length = lf_end[0] - lf_start[0]
+        
+        lf_pos_phase = np.zeros((3, N_phase))
+        lf_vel_phase = np.zeros((3, N_phase))
+        lf_acc_phase = np.zeros((3, N_phase))
+        
+        for i in range(N_phase):
+            local_time = i * conf.dt
+            pos, vel, acc = generate_swing_foot_trajectory(
+                lf_start, stride_length, step_height, phase_duration, local_time)
+            lf_pos_phase[:, i] = pos
+            lf_vel_phase[:, i] = vel
+            lf_acc_phase[:, i] = acc
+            
+    elif contact_phase == "right":
+        # Right foot swings, left foot is stance (constant)
+        lf_pos_phase = np.tile(lf_start.reshape(-1, 1), (1, N_phase))
+        lf_vel_phase = np.zeros((3, N_phase))
+        lf_acc_phase = np.zeros((3, N_phase))
+        
+        # Generate swing trajectory for right foot
+        stride_length = rf_end[0] - rf_start[0]
+        
+        rf_pos_phase = np.zeros((3, N_phase))
+        rf_vel_phase = np.zeros((3, N_phase))
+        rf_acc_phase = np.zeros((3, N_phase))
+        
+        for i in range(N_phase):
+            local_time = i * conf.dt
+            pos, vel, acc = generate_swing_foot_trajectory(
+                rf_start, stride_length, step_height, phase_duration, local_time)
+            rf_pos_phase[:, i] = pos
+            rf_vel_phase[:, i] = vel
+            rf_acc_phase[:, i] = acc
+    
+    # Store trajectories in main arrays
+    end_idx = min(time_idx + N_phase, N)
+    actual_N = end_idx - time_idx
+    
+    com_pos_traj[:, time_idx:end_idx] = com_pos_phase[:, :actual_N]
+    com_vel_traj[:, time_idx:end_idx] = com_vel_phase[:, :actual_N]
+    com_acc_traj[:, time_idx:end_idx] = com_acc_phase[:, :actual_N]
+    lf_pos_traj[:, time_idx:end_idx] = lf_pos_phase[:, :actual_N]
+    lf_vel_traj[:, time_idx:end_idx] = lf_vel_phase[:, :actual_N]
+    lf_acc_traj[:, time_idx:end_idx] = lf_acc_phase[:, :actual_N]
+    rf_pos_traj[:, time_idx:end_idx] = rf_pos_phase[:, :actual_N]
+    rf_vel_traj[:, time_idx:end_idx] = rf_vel_phase[:, :actual_N]
+    rf_acc_traj[:, time_idx:end_idx] = rf_acc_phase[:, :actual_N]
+    
+    # Generate contact pattern (stance foot at each timestep)
+    for i in range(actual_N):
+        if contact_phase == "double":
+            contact_pattern.append("double")  # Both feet in contact
+        elif contact_phase == "left":
+            contact_pattern.append("right")   # Right foot is stance (left swings)
+        elif contact_phase == "right":
+            contact_pattern.append("left")    # Left foot is stance (right swings)
+    
+    time_idx = end_idx
+
+print(f"\nTrajectory interpolation completed!")
+print(f"Generated {len(contact_pattern)} timesteps")
+print(f"Contact pattern types: {set(contact_pattern)}")
+print(f"CoM trajectory shape: {com_pos_traj.shape}")
+print(f"LF trajectory shape: {lf_pos_traj.shape}")
+print(f"RF trajectory shape: {rf_pos_traj.shape}")
 
 # Initialize simulation variables
 t = -conf.T_pre
