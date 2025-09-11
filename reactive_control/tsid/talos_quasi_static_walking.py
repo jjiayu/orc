@@ -380,159 +380,71 @@ for i in range(-N_pre, N + N_post):
         # Get contact pattern for current phase
         contact_phase_current = gait_pattern[current_phase_idx]
         
-        # Interpolate CoM position
-        com_start = com_path[current_phase_idx][0]
-        com_end = com_path[current_phase_idx][1]
-        com_pos_ref_current = com_start + progress * (com_end - com_start)
-        com_vel_ref_current = (com_end - com_start) / phase_duration if phase_duration > 0 else np.zeros(3)
-        com_acc_ref_current = np.zeros(3)  # Simple interpolation, no acceleration
-        
-        # Interpolate left foot position
-        lf_start = lf_path[current_phase_idx][0]
-        lf_end = lf_path[current_phase_idx][1]
-        lf_pos_ref_current = lf_start + progress * (lf_end - lf_start)
-        lf_vel_ref_current = (lf_end - lf_start) / phase_duration if phase_duration > 0 else np.zeros(3)
-        lf_acc_ref_current = np.zeros(3)
-        
-        # Interpolate right foot position  
-        rf_start = rf_path[current_phase_idx][0]
-        rf_end = rf_path[current_phase_idx][1]
-        rf_pos_ref_current = rf_start + progress * (rf_end - rf_start)
-        rf_vel_ref_current = (rf_end - rf_start) / phase_duration if phase_duration > 0 else np.zeros(3)
-        rf_acc_ref_current = np.zeros(3)
-    else:
-        # Stabilization phase: hold final position with zero velocity/acceleration
-        final_com = com_path[-1][1] if com_path else current_com.copy()
-        final_lf = lf_path[-1][1] if lf_path else current_lf_pos.copy()
-        final_rf = rf_path[-1][1] if rf_path else current_rf_pos.copy()
-        
-        com_pos_ref_current = final_com
-        com_vel_ref_current = np.zeros(3)
-        com_acc_ref_current = np.zeros(3)
-        lf_pos_ref_current = final_lf
-        rf_pos_ref_current = final_rf
-        lf_vel_ref_current = np.zeros(3)
-        rf_vel_ref_current = np.zeros(3)
-        lf_acc_ref_current = np.zeros(3)
-        rf_acc_ref_current = np.zeros(3)
-        contact_phase_current = "double"
-    
     # Handle contact phase changes
-    if i > 0 and i < N:
-        # Get previous contact phase for comparison
-        if i == 1:  # First iteration of main trajectory
-            contact_phase_prev = "double"
-        else:
-            # Calculate previous phase
-            t_prev = (i-1) * conf.dt
-            cumulative_time_prev = 0
-            prev_phase_idx = 0
-            for phase_idx in range(len(phase_durations)):
-                if t_prev < cumulative_time_prev + phase_durations[phase_idx]:
-                    prev_phase_idx = phase_idx
-                    break
-                cumulative_time_prev += phase_durations[phase_idx]
+    if i == 0:
+        print("Starting to walk")
+        # Initial contact state is double support, no changes needed
+    elif i > 0 and i < N - 1:
+        if contact_pattern[i] != contact_pattern[i - 1]:
+            print(f"Time {t:.3f}: Changing contact from {contact_pattern[i-1]} to {contact_pattern[i]}")
             
-            if prev_phase_idx >= len(gait_pattern):
-                prev_phase_idx = len(gait_pattern) - 1
-            contact_phase_prev = gait_pattern[prev_phase_idx]
-        
-        # Handle contact transitions
-        if contact_phase_current != contact_phase_prev:
-            print(f"Time {t:.3f} Phase {current_phase_idx}: Changing contact from {contact_phase_prev} to {contact_phase_current}")
-            
-            if contact_phase_current == "left":
-                # Left foot stance, right foot swing
-                print(f"  -> Adding LF contact, removing RF contact")
+            if contact_pattern[i] == "left":
+                # Left foot is stance, right foot swings
                 tsid_biped.add_contact_LF()
                 tsid_biped.remove_contact_RF()
-            elif contact_phase_current == "right":
-                # Right foot stance, left foot swing
-                print(f"  -> Adding RF contact, removing LF contact")
+            elif contact_pattern[i] == "right":
+                # Right foot is stance, left foot swings  
                 tsid_biped.add_contact_RF()
                 tsid_biped.remove_contact_LF()
-            elif contact_phase_current == "double":
+            elif contact_pattern[i] == "double":
                 # Both feet in contact
-                print(f"  -> Adding both LF and RF contacts")
                 tsid_biped.add_contact_LF()
                 tsid_biped.add_contact_RF()
     
-    # Set references to the robot
-    tsid_biped.set_com_ref(com_pos_ref_current, com_vel_ref_current, com_acc_ref_current)
+    # Set reference trajectories
+    if i < 0:
+        # Preparation phase: hold initial position
+        tsid_biped.set_com_ref(current_com, np.zeros(3), np.zeros(3))
+        tsid_biped.set_LF_3d_ref(current_lf_pos, np.zeros(3), np.zeros(3))
+        tsid_biped.set_RF_3d_ref(current_rf_pos, np.zeros(3), np.zeros(3))
+    elif i < N:
+        # Main trajectory phase
+        tsid_biped.set_com_ref(com_pos_traj[:, i], com_vel_traj[:, i], com_acc_traj[:, i])
+        tsid_biped.set_LF_3d_ref(lf_pos_traj[:, i], lf_vel_traj[:, i], lf_acc_traj[:, i])
+        tsid_biped.set_RF_3d_ref(rf_pos_traj[:, i], rf_vel_traj[:, i], rf_acc_traj[:, i])
+    else:
+        # Post-trajectory phase: hold final position
+        tsid_biped.set_com_ref(com_pos_traj[:, -1], np.zeros(3), np.zeros(3))
+        tsid_biped.set_LF_3d_ref(lf_pos_traj[:, -1], np.zeros(3), np.zeros(3))
+        tsid_biped.set_RF_3d_ref(rf_pos_traj[:, -1], np.zeros(3), np.zeros(3))
     
-    # Set foot references (only for swing foot during single support)
-    if i >= 0 and i < N and contact_phase_current in ["left", "right"]:
-        # Single support phase - set swing foot reference
-        if contact_phase_current == "left":
-            # Left foot stance, right foot swings
-            tsid_biped.set_RF_3d_ref(rf_pos_ref_current, rf_vel_ref_current, rf_acc_ref_current)
-        else:
-            # Right foot stance, left foot swings  
-            tsid_biped.set_LF_3d_ref(lf_pos_ref_current, lf_vel_ref_current, lf_acc_ref_current)
-    
-    
-    # Solve the QP problem
+    # Solve QP problem
     HQPData = tsid_biped.formulation.computeProblemData(t, q, v)
     sol = tsid_biped.solver.solve(HQPData)
     
     if sol.status != 0:
-        print("QP problem could not be solved! Error code:", sol.status)
+        print(f"QP problem could not be solved! Error code: {sol.status}")
         break
+        
     if norm(v, 2) > 10.0:
-        print("Time %.3f Velocities are too high, stop everything!" % (t), norm(v))
+        print(f"Time {t:.3f} Velocities are too high! ||v||: {norm(v)}")
         break
     
-    # Get accelerations and integrate
+    # Get solution
     dv = tsid_biped.formulation.getAccelerations(sol)
     
-    # Log data (only for non-negative indices)
+    # Log data
     if i >= 0:
         com_pos[:, i] = tsid_biped.robot.com(tsid_biped.formulation.data())
         com_vel[:, i] = tsid_biped.robot.com_vel(tsid_biped.formulation.data())
         com_acc[:, i] = tsid_biped.comTask.getAcceleration(dv)
     
-    # Print progress
-    if i % 100 == 0:
-        current_com = tsid_biped.robot.com(tsid_biped.formulation.data())
-        current_com_vel = tsid_biped.robot.com_vel(tsid_biped.formulation.data())
-        actual_lf_pos = tsid_biped.get_placement_LF().translation
-        actual_rf_pos = tsid_biped.get_placement_RF().translation
-        
-        print("Time %.3f" % (t))
+    # Print status
+    if i % conf.PRINT_N == 0:
+        print(f"Time {t:.3f}")
         if i >= 0 and i < N:
-            print(f"  CoM ref: [{com_pos_ref_current[0]:.3f}, {com_pos_ref_current[1]:.3f}, {com_pos_ref_current[2]:.3f}]")
-            print(f"  CoM vel ref: [{com_vel_ref_current[0]:.3f}, {com_vel_ref_current[1]:.3f}, {com_vel_ref_current[2]:.3f}]")
-            
-            # Print phase info for new implementation
-            if 'current_phase_idx' in locals() and 'contact_phase_current' in locals():
-                print(f"  Phase {current_phase_idx}: {contact_phase_current}, Progress: {progress:.3f}")
-                
-                # Print foot reference targets
-                if contact_phase_current in ["left", "right"]:
-                    if contact_phase_current == "left":
-                        print(f"  RF target: [{rf_pos_ref_current[0]:.3f}, {rf_pos_ref_current[1]:.3f}, {rf_pos_ref_current[2]:.3f}]")
-                    else:
-                        print(f"  LF target: [{lf_pos_ref_current[0]:.3f}, {lf_pos_ref_current[1]:.3f}, {lf_pos_ref_current[2]:.3f}]")
-                        
-        elif i < 0:
-            print(f"  CoM ref: [{com_pos_ref_current[0]:.3f}, {com_pos_ref_current[1]:.3f}, {com_pos_ref_current[2]:.3f}] (prep)")
-            print(f"  CoM vel ref: [0.000, 0.000, 0.000] (prep)")
-        else:
-            print(f"  CoM ref: [{com_pos_ref_current[0]:.3f}, {com_pos_ref_current[1]:.3f}, {com_pos_ref_current[2]:.3f}] (stab)")
-            print(f"  CoM vel ref: [0.000, 0.000, 0.000] (stab)")
-            
-        print(f"  CoM actual: [{current_com[0]:.3f}, {current_com[1]:.3f}, {current_com[2]:.3f}]")
-        print(f"  CoM vel actual: [{current_com_vel[0]:.3f}, {current_com_vel[1]:.3f}, {current_com_vel[2]:.3f}]")
-        print(f"  LF actual: [{actual_lf_pos[0]:.3f}, {actual_lf_pos[1]:.3f}, {actual_lf_pos[2]:.3f}]")
-        print(f"  RF actual: [{actual_rf_pos[0]:.3f}, {actual_rf_pos[1]:.3f}, {actual_rf_pos[2]:.3f}]")
-        
-        # Print contact status
-        lf_contact_active = tsid_biped.contact_LF_active
-        rf_contact_active = tsid_biped.contact_RF_active
-        print(f"  LF contact: {'ACTIVE' if lf_contact_active else 'BROKEN'}")
-        print(f"  RF contact: {'ACTIVE' if rf_contact_active else 'BROKEN'}")
-        
-        print(f"  Tracking error: {norm(tsid_biped.comTask.position_error, 2):.3f}")
+            print(f"  Contact: {contact_pattern[i]}")
+            print(f"  CoM tracking error: {norm(tsid_biped.comTask.position_error, 2):.3f}")
         print(f"  ||v||: {norm(v, 2):.3f}, ||dv||: {norm(dv):.3f}")
     
     # Integrate dynamics
