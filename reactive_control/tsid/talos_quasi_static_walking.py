@@ -343,11 +343,11 @@ for i in range(-N_pre, N + N_post):
             
             if contact_pattern[i] == "left":
                 # Left foot is stance, right foot swings
-                tsid_biped.add_contact_LF()
+                # tsid_biped.add_contact_LF()
                 tsid_biped.remove_contact_RF()
             elif contact_pattern[i] == "right":
                 # Right foot is stance, left foot swings  
-                tsid_biped.add_contact_RF()
+                # tsid_biped.add_contact_RF()
                 tsid_biped.remove_contact_LF()
             elif contact_pattern[i] == "double":
                 # Both feet in contact
