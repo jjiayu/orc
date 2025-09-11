@@ -8,7 +8,7 @@ import orc.utils.plot_utils as plut
 from numpy import nan
 from numpy.linalg import norm as norm
 from tsid_biped import TsidBiped
-from orc.optimal_control.lipm.biped.lipm_to_tsid import compute_3rd_order_poly_traj
+from orc.optimal_control.lipm.biped.lipm_to_tsid import compute_3rd_order_poly_traj, generate_swing_foot_trajectory
 
 import tsid
 
@@ -47,7 +47,7 @@ time.sleep(1.0)
 
 #define contact pattern
 contact_patterns = ["double", "left", "double"] #variables mean contact configuration
-phase_durations = np.array([3.0, 3.0, 3.0])
+phase_durations = np.array([3.0, 6.0, 3.0])
 stride_length = 0.1
 
 #Let us just make one step
@@ -106,6 +106,12 @@ com_x_offset = 0.021
 com_middle[0] = (lf_current[0] + rf_current[0]) / 2 + com_x_offset
 com_middle[1] = (lf_current[1] + rf_current[1]) / 2
 
+# Stepping parameters
+step_height = 0.12  # Maximum foot lift height
+stride_length = 0.1  # Forward step distance
+swing_foot_initial_pos = rf_current.copy()  # Right foot will be the swing foot
+stance_foot_pos = lf_current.copy()  # Left foot is stance foot
+
 print("CoM trajectory setup completed!")
 
 t = -conf.T_pre
@@ -162,10 +168,28 @@ for i in range(-N_pre, N + N_post):
                 com_vel_ref_current = np.zeros(3)
                 com_acc_ref_current = np.zeros(3)
                 
-        elif phase_idx == 1:  # Phase 2: Left support - maintain position
+        elif phase_idx == 1:  # Phase 2: Left support - swing right foot
             com_pos_ref_current = com_above_left
             com_vel_ref_current = np.zeros(3)
             com_acc_ref_current = np.zeros(3)
+            
+            # Generate swing foot trajectory
+            phase_start_time = phase_durations[0]
+            local_time = t_traj - phase_start_time
+            swing_duration = phase_durations[1]
+            
+            if local_time >= 0 and local_time <= swing_duration:
+                # Calculate swing foot position
+                swing_foot_pos, swing_foot_vel, swing_foot_acc = generate_swing_foot_trajectory(
+                    swing_foot_initial_pos, stride_length, step_height, swing_duration, local_time
+                )
+            else:
+                # End of swing - foot should be on ground at new position
+                final_pos = swing_foot_initial_pos.copy()
+                final_pos[0] += stride_length  # Move forward by stride length
+                swing_foot_pos = final_pos
+                swing_foot_vel = np.zeros(3)
+                swing_foot_acc = np.zeros(3)
             
         elif phase_idx == 2:  # Phase 3: Double support - move to middle
             phase_start_time = phase_durations[0] + phase_durations[1]
@@ -214,9 +238,11 @@ for i in range(-N_pre, N + N_post):
         if contact_phase_current != contact_phase_prev:
             print(f"Time {t:.3f} Changing contact phase from {contact_phase_prev} to {contact_phase_current}")
             if contact_phase_current == "left":
+                # Entering single support - left foot stance, right foot swing
                 tsid_biped.add_contact_LF()
                 tsid_biped.remove_contact_RF()
             elif contact_phase_current == "double":
+                # Entering double support - both feet in contact
                 tsid_biped.add_contact_LF()
                 tsid_biped.add_contact_RF()
     
@@ -224,7 +250,30 @@ for i in range(-N_pre, N + N_post):
     tsid_biped.set_com_ref(com_pos_ref_current, com_vel_ref_current, com_acc_ref_current)
     
     # Set foot references
-    # tsid_biped.set_RF_3d_ref(x_RF_ref[:, i], dx_RF_ref[:, i], ddx_RF_ref[:, i])
+    if i >= 0 and i < N:
+        t_traj = i * conf.dt
+        phase_idx = 0
+        for j in range(len(phase_durations)):
+            if t_traj < phase_end_times[j]:
+                phase_idx = j
+                break
+        
+        if phase_idx == 1:  # Single support phase - swing right foot
+            phase_start_time = phase_durations[0]
+            local_time = t_traj - phase_start_time
+            swing_duration = phase_durations[1]
+            
+            if local_time >= 0 and local_time <= swing_duration:
+                swing_foot_pos, swing_foot_vel, swing_foot_acc = generate_swing_foot_trajectory(
+                    swing_foot_initial_pos, stride_length, step_height, swing_duration, local_time
+                )
+                tsid_biped.set_RF_3d_ref(swing_foot_pos, swing_foot_vel, swing_foot_acc)
+            else:
+                # End of swing - foot at final position
+                final_pos = swing_foot_initial_pos.copy()
+                final_pos[0] += stride_length
+                tsid_biped.set_RF_3d_ref(final_pos, np.zeros(3), np.zeros(3))
+    
     
     # Solve the QP problem
     HQPData = tsid_biped.formulation.computeProblemData(t, q, v)

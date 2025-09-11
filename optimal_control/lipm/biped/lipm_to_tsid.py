@@ -291,3 +291,50 @@ if __name__=='__main__':
     # plt.gca().set_ylim([-0.3, 0.3])
 
     # plt.show()
+
+def generate_swing_foot_trajectory(initial_pos, stride_length, step_height, swing_duration, local_time):
+    """
+    Generate swing foot trajectory with 3 phases:
+    1. Lift up (first 1/3 of swing duration)
+    2. Move forward (middle 1/3 of swing duration) 
+    3. Put down (last 1/3 of swing duration)
+    """
+    t_lift = swing_duration / 3.0
+    t_forward = swing_duration / 3.0
+    t_down = swing_duration / 3.0
+    
+    pos = initial_pos.copy()
+    vel = np.zeros(3)
+    acc = np.zeros(3)
+    
+    if local_time <= t_lift:
+        # Phase 1: Lift up
+        t_norm = local_time / t_lift
+        # Smooth lift trajectory using 5th order polynomial
+        pos[2] = initial_pos[2] + step_height * (10*t_norm**3 - 15*t_norm**4 + 6*t_norm**5)
+        vel[2] = step_height * (30*t_norm**2 - 60*t_norm**3 + 30*t_norm**4) / t_lift
+        acc[2] = step_height * (60*t_norm - 180*t_norm**2 + 120*t_norm**3) / (t_lift**2)
+        
+    elif local_time <= t_lift + t_forward:
+        # Phase 2: Move forward at constant height
+        t_local = local_time - t_lift
+        t_norm = t_local / t_forward
+        
+        pos[2] = initial_pos[2] + step_height  # Maintain height
+        # Forward motion using 5th order polynomial
+        pos[0] = initial_pos[0] + stride_length * (10*t_norm**3 - 15*t_norm**4 + 6*t_norm**5)
+        vel[0] = stride_length * (30*t_norm**2 - 60*t_norm**3 + 30*t_norm**4) / t_forward
+        acc[0] = stride_length * (60*t_norm - 180*t_norm**2 + 120*t_norm**3) / (t_forward**2)
+        
+    else:
+        # Phase 3: Put down
+        t_local = local_time - t_lift - t_forward
+        t_norm = t_local / t_down
+        
+        pos[0] = initial_pos[0] + stride_length  # Final forward position
+        # Smooth landing using 5th order polynomial (from step_height to 0)
+        pos[2] = initial_pos[2] + step_height * (1 - (10*t_norm**3 - 15*t_norm**4 + 6*t_norm**5))
+        vel[2] = -step_height * (30*t_norm**2 - 60*t_norm**3 + 30*t_norm**4) / t_down
+        acc[2] = -step_height * (60*t_norm - 180*t_norm**2 + 120*t_norm**3) / (t_down**2)
+    
+    return pos, vel, acc
