@@ -396,9 +396,9 @@ for i in range(-N_pre, N + N_post):
     if i % conf.PRINT_N == 0:
         print(f"Time {t:.3f}")
         if i >= 0 and i < N:
-            # Contact status
-            lf_contact = "ACTIVE" if tsid_biped.contact_LF_active else "INACTIVE"
-            rf_contact = "ACTIVE" if tsid_biped.contact_RF_active else "INACTIVE"
+            # Contact status (check actual QP solution)
+            lf_contact = "ACTIVE" if tsid_biped.formulation.checkContact(tsid_biped.contactLF.name, sol) else "INACTIVE"
+            rf_contact = "ACTIVE" if tsid_biped.formulation.checkContact(tsid_biped.contactRF.name, sol) else "INACTIVE"
             print(f"  Contact pattern: {contact_pattern[i]} | LF: {lf_contact} | RF: {rf_contact}")
             
             # CoM target vs actual
