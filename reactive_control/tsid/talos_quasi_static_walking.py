@@ -52,12 +52,12 @@ time.sleep(1.0)
 # ============================================================================
 
 # Define number of steps and gait pattern
-Num_Steps = 2
+Num_Steps = 3
 steps_phases = 3  # Each step has 3 phases: double -> stance -> double
 
 # Create gait pattern: [double, swing_foot, double] for each step
 # Alternate between left and right swing foot for each step
-first_swing_foot = "right"
+first_swing_foot = "left"
 gait_pattern = []
 for step in range(Num_Steps):
     # Start with first_swing_foot, then alternate
@@ -74,12 +74,14 @@ print("Gait pattern:", gait_pattern)
 if first_swing_foot == "left":
     footstep_targets = [
         np.array([0.11, 0.096, 0.07]),   # Step 0: Left foot target
-        np.array([0.21, -0.096, 0.07])   # Step 1: Right foot target
+        np.array([0.21, -0.096, 0.07]),   # Step 1: Right foot target
+        np.array([0.31, 0.096, 0.07]),   # Step 2: Left foot target
     ]
 else:
     footstep_targets = [
         np.array([0.11, -0.096, 0.07]),  # Step 0: Right foot target
-        np.array([0.21, 0.096, 0.07])    # Step 1: Left foot target
+        np.array([0.21, 0.096, 0.07]),   # Step 1: Left foot target
+        np.array([0.31, -0.096, 0.07]),  # Step 2: Right foot target
     ]
 
 print("Footstep targets:", footstep_targets)
@@ -343,16 +345,25 @@ for i in range(-N_pre, N + N_post):
             
             if contact_pattern[i] == "left":
                 # Left foot is stance, right foot swings
-                tsid_biped.add_contact_LF()
-                tsid_biped.remove_contact_RF()
+                print("set left support right swing contact configurations")
+                if tsid_biped.contact_RF_active:
+                    tsid_biped.remove_contact_RF()
+                if not tsid_biped.contact_LF_active:
+                    tsid_biped.add_contact_LF()
             elif contact_pattern[i] == "right":
                 # Right foot is stance, left foot swings  
-                tsid_biped.add_contact_RF()
-                tsid_biped.remove_contact_LF()
+                print("set right support left swing contact configurations")
+                if tsid_biped.contact_LF_active:
+                    tsid_biped.remove_contact_LF()
+                if not tsid_biped.contact_RF_active:
+                    tsid_biped.add_contact_RF()
             elif contact_pattern[i] == "double":
                 # Both feet in contact
-                tsid_biped.add_contact_LF()
-                tsid_biped.add_contact_RF()
+                print("set double support contact configurations")
+                if not tsid_biped.contact_LF_active:
+                    tsid_biped.add_contact_LF()
+                if not tsid_biped.contact_RF_active:
+                    tsid_biped.add_contact_RF()
     
     # Set reference trajectories
     if i < 0:
