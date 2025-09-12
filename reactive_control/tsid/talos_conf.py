@@ -55,32 +55,33 @@ gain_vector = np.array(  # gain vector for postural task
         10.,  #rleg
         5000.,
         5000.,  #chest
+        5000.,
+        1000,
+        100.,
+        100.,
         500.,
-        1000.,
-        10.,
-        10.,
-        10.,
         10.,
         100.,
         50.,  #larm
-        50.,
+        5000.,
+        1000.,
         100.,
-        10.,
-        10.,
-        10.,
+        100.,
+        500.,
         10.,
         100.,
         50.,  #rarm
-        100.,
-        100.
+        1000.,
+        1000.  
     ]  #head
 )
 masks_posture = np.ones(32)
+gain_vector[14:] *= 50.0
 
 tau_max_scaling = 1.45  # scaling factor of torque bounds
-v_max_scaling = 0.8
+v_max_scaling = 1.45
 
-kp_contact = 10.0       # proportional gain of contact constraint
+kp_contact = 30.0       # proportional gain of contact constraint
 kp_foot = 10.0          # proportional gain of contact constraint
 kp_com = 10.0           # proportional gain of center of mass task
 kp_am = 10.0            # proportional gain of angular momentum task
