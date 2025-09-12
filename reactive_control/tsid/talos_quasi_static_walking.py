@@ -1,7 +1,7 @@
 import time
 
-import orc.optimal_control.lipm.biped.romeo_conf as conf
-# import talos_conf as conf
+# import orc.optimal_control.lipm.biped.romeo_conf as conf
+import talos_conf as conf
 import matplotlib.pyplot as plt
 import numpy as np
 import orc.utils.plot_utils as plut
@@ -16,7 +16,7 @@ print("".center(conf.LINE_WIDTH, "#"))
 print(" Test Walking ".center(conf.LINE_WIDTH, "#"))
 print("".center(conf.LINE_WIDTH, "#"), "\n")
 
-CoM_Height = 0.6
+CoM_Height = 0.75
 step_height = 0.10
 
 USE_EIQUADPROG = 1
@@ -73,16 +73,17 @@ print("Gait pattern:", gait_pattern)
 # These correspond to the swing foot positions for each step
 if first_swing_foot == "left":
     footstep_targets = [
-        np.array([0.11, 0.096, 0.07]),   # Step 0: Left foot target
-        np.array([0.21, -0.096, 0.07]),   # Step 1: Right foot target
-        np.array([0.31, 0.096, 0.07]),   # Step 2: Left foot target
+        np.array([0.11, 0.085, 0.0]),   # Step 0: Left foot target
+        np.array([0.21, -0.085, 0.0]),   # Step 1: Right foot target
+        np.array([0.31, 0.085, 0.0]),   # Step 2: Left foot target
     ]
 else:
     footstep_targets = [
-        np.array([0.11, -0.096, 0.07]),  # Step 0: Right foot target
-        np.array([0.21, 0.096, 0.07]),   # Step 1: Left foot target
-        np.array([0.31, -0.096, 0.07]),  # Step 2: Right foot target
+        np.array([0.11, -0.085, 0.0]),  # Step 0: Right foot target
+        np.array([0.21, 0.085, 0.0]),   # Step 1: Left foot target
+        np.array([0.31, -0.085, 0.0]),  # Step 2: Right foot target
     ]
+    #0.096, 0.07 for romeo
 
 print("Footstep targets:", footstep_targets)
 
