@@ -57,7 +57,7 @@ steps_phases = 3  # Each step has 3 phases: double -> stance -> double
 
 # Create gait pattern: [double, swing_foot, double] for each step
 # Alternate between left and right swing foot for each step
-first_swing_foot = "left"
+first_swing_foot = "right"
 gait_pattern = []
 for step in range(Num_Steps):
     # Start with first_swing_foot, then alternate
@@ -343,11 +343,11 @@ for i in range(-N_pre, N + N_post):
             
             if contact_pattern[i] == "left":
                 # Left foot is stance, right foot swings
-                # tsid_biped.add_contact_LF()
+                tsid_biped.add_contact_LF()
                 tsid_biped.remove_contact_RF()
             elif contact_pattern[i] == "right":
                 # Right foot is stance, left foot swings  
-                # tsid_biped.add_contact_RF()
+                tsid_biped.add_contact_RF()
                 tsid_biped.remove_contact_LF()
             elif contact_pattern[i] == "double":
                 # Both feet in contact
