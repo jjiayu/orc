@@ -79,7 +79,6 @@ class TsidBiped:
         sampleAM = tsid.TrajectorySample(3)
         amTask.setReference(sampleAM)
 
-
         postureTask = tsid.TaskJointPosture("task-posture", robot)
         postureTask.setKp(conf.kp_posture * conf.gain_vector)
         postureTask.setKd(2.0 * np.sqrt(conf.kp_posture * conf.gain_vector))
