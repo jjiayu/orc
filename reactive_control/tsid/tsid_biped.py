@@ -43,6 +43,8 @@ class TsidBiped:
 
         # modify initial robot configuration so that foot is on the ground (z=0)
         q[2] -= H_rf_ref.translation[2] - conf.lz
+        q[1] = H_rf_ref.translation[1] + 0.17 # tune let the right foot to stay at 0, 0, 0
+        q[0] = H_rf_ref.translation[0] + 0.02 # tune let the right foot to stay at 0, 0, 0
         formulation.computeProblemData(0.0, q, v)
         data = formulation.data()
         H_rf_ref = robot.framePosition(data, self.RF)
