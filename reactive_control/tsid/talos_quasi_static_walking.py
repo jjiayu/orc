@@ -1,4 +1,6 @@
 import time
+import json
+import os
 
 # import orc.optimal_control.lipm.biped.romeo_conf as conf
 import talos_conf as conf
@@ -30,6 +32,10 @@ PLOT_FOOT_TRAJ = 0
 PLOT_TORQUES = 0
 PLOT_JOINT_VEL = 0
 
+# Configuration for loading footsteps from JSON file
+USE_JSON_FOOTSTEPS = True
+JSON_FOOTSTEP_FILE = "footsteps_output.json"
+
 tsid_biped = TsidBiped(conf, conf.viewer)
 
 # overwrite the default solver
@@ -48,16 +54,94 @@ time.sleep(1.0)
 
 
 # ============================================================================
-# NEW IMPLEMENTATION: Gait Pattern with Start/End Position Interpolation
+# FOOTSTEP LOADING: Load from JSON file or use hardcoded values
 # ============================================================================
 
-# Define number of steps and gait pattern
-Num_Steps = 3
+def load_footsteps_from_json(filename):
+    """Load footsteps from JSON file"""
+    # Get the directory where this script is located
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    full_path = os.path.join(script_dir, filename)
+    
+    print(f"Looking for JSON file at: {full_path}")
+    print(f"Current working directory: {os.getcwd()}")
+    
+    if not os.path.exists(full_path):
+        print(f"Warning: JSON file {full_path} not found. Using hardcoded footsteps.")
+        return None
+    
+    try:
+        with open(full_path, 'r') as f:
+            data = json.load(f)
+        
+        footsteps = []
+        for step in data['footsteps']:
+            footsteps.append({
+                'position': np.array(step['position']),
+                'foot': step['foot'],
+                'timing': step.get('timing', 0.0),
+                'yaw': step.get('yaw', 0.0)
+            })
+        
+        print(f"Loaded {len(footsteps)} footsteps from {filename}")
+        return footsteps
+    
+    except Exception as e:
+        print(f"Error loading JSON file {filename}: {e}")
+        print("Using hardcoded footsteps instead.")
+        return None
+
+# Load footsteps from JSON or use hardcoded values
+if USE_JSON_FOOTSTEPS:
+    loaded_footsteps = load_footsteps_from_json(JSON_FOOTSTEP_FILE)
+else:
+    loaded_footsteps = None
+
+if loaded_footsteps is not None:
+    # Use loaded footsteps
+    print("Using footsteps from JSON file:")
+    for i, step in enumerate(loaded_footsteps[:5]):  # Show first 5 steps
+        pos = step['position']
+        print(f"  Step {i}: {step['foot']} foot -> [{pos[0]:.3f}, {pos[1]:.3f}, {pos[2]:.3f}], yaw: {step['yaw']:.3f}")
+    if len(loaded_footsteps) > 5:
+        print(f"  ... and {len(loaded_footsteps) - 5} more steps")
+    
+    # Extract footstep targets and determine gait pattern
+    Num_Steps = len(loaded_footsteps)
+    # The JSON contains stance foot labels, so we need to reverse to get swing foot
+    first_stance_foot = loaded_footsteps[0]['foot'] if loaded_footsteps else "right"
+    first_swing_foot = "left" if first_stance_foot == "right" else "right"
+    
+    # Create footstep targets array
+    footstep_targets = [step['position'] for step in loaded_footsteps]
+    
+else:
+    # Use hardcoded footsteps (original implementation)
+    print("Using hardcoded footsteps")
+    Num_Steps = 3
+    first_swing_foot = "left"
+    
+    if first_swing_foot == "left":
+        footstep_targets = [
+            np.array([0.11, 0.085, 0.0]),   # Step 0: Left foot target
+            np.array([0.21, -0.085, 0.0]),   # Step 1: Right foot target
+            np.array([0.31, 0.085, 0.0]),   # Step 2: Left foot target
+        ]
+    else:
+        footstep_targets = [
+            np.array([0.11, -0.085, 0.0]),  # Step 0: Right foot target
+            np.array([0.21, 0.085, 0.0]),   # Step 1: Left foot target
+            np.array([0.31, -0.085, 0.0]),  # Step 2: Right foot target
+        ]
+
+# ============================================================================
+# GAIT PATTERN GENERATION
+# ============================================================================
+
 steps_phases = 3  # Each step has 3 phases: double -> stance -> double
 
 # Create gait pattern: [double, swing_foot, double] for each step
 # Alternate between left and right swing foot for each step
-first_swing_foot = "left"
 gait_pattern = []
 for step in range(Num_Steps):
     # Start with first_swing_foot, then alternate
@@ -68,24 +152,7 @@ for step in range(Num_Steps):
     gait_pattern.extend(["double", swing_foot, "double"])
 
 print("Gait pattern:", gait_pattern)
-
-# Define target footstep positions for each step
-# These correspond to the swing foot positions for each step
-if first_swing_foot == "left":
-    footstep_targets = [
-        np.array([0.11, 0.085, 0.0]),   # Step 0: Left foot target
-        np.array([0.21, -0.085, 0.0]),   # Step 1: Right foot target
-        np.array([0.31, 0.085, 0.0]),   # Step 2: Left foot target
-    ]
-else:
-    footstep_targets = [
-        np.array([0.11, -0.085, 0.0]),  # Step 0: Right foot target
-        np.array([0.21, 0.085, 0.0]),   # Step 1: Left foot target
-        np.array([0.31, -0.085, 0.0]),  # Step 2: Right foot target
-    ]
-    #0.096, 0.07 for romeo
-
-print("Footstep targets:", footstep_targets)
+print("Footstep targets:", len(footstep_targets), "steps")
 
 # Phase durations: 3 phases per step, repeated for all steps
 base_phase_durations = [3.0, 6.0, 3.0]  # [double, stance, double]
