@@ -219,7 +219,7 @@ def visualize_footsteps_in_meshcat(tsid_biped, footstep_targets, loaded_footstep
 # ENVIRONMENT VISUALIZATION FROM ENV FILE
 # ============================================================================
 
-def load_and_visualize_environment(tsid_biped, env_file="narrow_passage"):
+def load_and_visualize_environment(tsid_biped, env_file="stairs_up_and_down"):
     """Load environment from env file and visualize surfaces in meshcat"""
     import meshcat.geometry as g
     import meshcat.transformations as tf
@@ -291,7 +291,7 @@ def load_and_visualize_environment(tsid_biped, env_file="narrow_passage"):
         print("Meshcat visualizer not available, skipping environment visualization")
 
 # Load and visualize the narrow passage environment
-load_and_visualize_environment(tsid_biped, "narrow_passage")
+load_and_visualize_environment(tsid_biped, "stairs_up_and_down")
 
 # Visualize the footsteps
 visualize_footsteps_in_meshcat(tsid_biped, footstep_targets, loaded_footsteps)
