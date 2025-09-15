@@ -215,6 +215,84 @@ def visualize_footsteps_in_meshcat(tsid_biped, footstep_targets, loaded_footstep
     else:
         print("Meshcat visualizer not available, skipping footstep visualization")
 
+# ============================================================================
+# ENVIRONMENT VISUALIZATION FROM ENV FILE
+# ============================================================================
+
+def load_and_visualize_environment(tsid_biped, env_file="narrow_passage"):
+    """Load environment from env file and visualize surfaces in meshcat"""
+    import meshcat.geometry as g
+    import meshcat.transformations as tf
+    import sys
+    import os
+    
+    if hasattr(tsid_biped, 'viz') and tsid_biped.viz is not None:
+        try:
+            # Add env folder to path
+            env_path = os.path.join(os.path.dirname(__file__), '..', 'env')
+            sys.path.insert(0, env_path)
+            
+            # Import the environment module
+            env_module = __import__(env_file)
+            
+            # Get the scene from the environment
+            scene = env_module.scene
+            
+            print(f"Loading environment from {env_file}.py...")
+            print(f"Found {len(scene)} surface groups in scene")
+            
+            # Colors for different surface types
+            colors = [0x90EE90, 0x87CEEB, 0xDDA0DD, 0xF0E68C, 0xFFA07A]  # Different colors
+            
+            surface_count = 0
+            for group_idx, surface_group in enumerate(scene):
+                color = colors[group_idx % len(colors)]
+                material = g.MeshLambertMaterial(color=color, opacity=0.8)
+                
+                for surface_idx, surface in enumerate(surface_group):
+                    # Surface is a 3x4 numpy array: [x_coords, y_coords, z_coords]
+                    x_coords = surface[0]
+                    y_coords = surface[1] 
+                    z_coords = surface[2]
+                    
+                    # Calculate surface dimensions and center
+                    x_min, x_max = min(x_coords), max(x_coords)
+                    y_min, y_max = min(y_coords), max(y_coords)
+                    z_min, z_max = min(z_coords), max(z_coords)
+                    
+                    width = x_max - x_min
+                    depth = y_max - y_min
+                    height = max(0.05, z_max - z_min)  # Minimum thickness for visibility
+                    
+                    center_x = (x_min + x_max) / 2
+                    center_y = (y_min + y_max) / 2
+                    center_z = (z_min + z_max) / 2 - height / 2  # Shift down so top reaches z=0
+                    
+                    # Create box geometry
+                    box = g.Box([width, depth, height])
+                    
+                    # Position the box
+                    transform = tf.translation_matrix([center_x, center_y, center_z])
+                    
+                    # Add to meshcat
+                    surface_name = f"environment/surface_{surface_count:02d}"
+                    tsid_biped.viz.viewer[surface_name].set_object(box, material)
+                    tsid_biped.viz.viewer[surface_name].set_transform(transform)
+                    
+                    print(f"  Surface {surface_count}: [{center_x:.2f}, {center_y:.2f}, {center_z:.2f}] size: [{width:.2f}x{depth:.2f}x{height:.2f}]")
+                    surface_count += 1
+            
+            print(f"Added {surface_count} environment surfaces to meshcat")
+            
+        except Exception as e:
+            print(f"Error loading environment {env_file}: {e}")
+            print("Falling back to default visualization")
+    else:
+        print("Meshcat visualizer not available, skipping environment visualization")
+
+# Load and visualize the narrow passage environment
+load_and_visualize_environment(tsid_biped, "narrow_passage")
+
 # Visualize the footsteps
 visualize_footsteps_in_meshcat(tsid_biped, footstep_targets, loaded_footsteps)
 
