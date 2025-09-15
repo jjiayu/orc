@@ -85,6 +85,25 @@ class TsidBiped:
         postureTask.setMask(conf.masks_posture)
         formulation.addMotionTask(postureTask, conf.w_posture, 1, 0.0)
 
+        # Root orientation task to keep torso upright
+        if conf.w_rootOrientation > 0.0:
+            self.orientationRootTask = tsid.TaskSE3Equality("task-orientation-root", robot, 'root_joint')
+            mask = np.ones(6)
+            mask[0:3] = 0  # disable position control
+            mask[5] = conf.YAW_ROT_GAIN  # allow some yaw rotation
+            self.orientationRootTask.setMask(mask)
+            self.orientationRootTask.setKp(conf.kp_rootOrientation * mask)
+            self.orientationRootTask.setKd(2.0 * np.sqrt(conf.kp_rootOrientation * mask))
+            formulation.addMotionTask(self.orientationRootTask, conf.w_rootOrientation, conf.level_rootOrientation, 0.0)
+            
+            # Set initial reference to current root orientation
+            H_root_ref = robot.framePosition(data, robot.model().getFrameId('root_joint'))
+            self.trajRoot = tsid.TrajectorySE3Constant("traj-root", H_root_ref)
+            self.sampleRoot = self.trajRoot.computeNext()
+            self.orientationRootTask.setReference(self.sampleRoot)
+        else:
+            self.orientationRootTask = None
+
         self.leftFootTask = tsid.TaskSE3Equality("task-left-foot", self.robot, self.conf.lf_frame_name)
         self.leftFootTask.setKp(self.conf.kp_foot * np.ones(6))
         self.leftFootTask.setKd(2.0 * np.sqrt(self.conf.kp_foot) * np.ones(6))
@@ -225,6 +244,15 @@ class TsidBiped:
         v = self.robot.frameVelocity(data, self.RF)
         a = self.rightFootTask.getAcceleration(dv)
         return H.translation, v.linear, a[:3]
+
+    def set_root_orientation_ref(self, orientation_matrix):
+        """Set root orientation reference to keep torso upright"""
+        if self.orientationRootTask is not None:
+            # Create SE3 transformation with identity translation and desired rotation
+            H_ref = pin.SE3(orientation_matrix, np.zeros(3))
+            self.trajRoot.setReference(H_ref)
+            self.sampleRoot = self.trajRoot.computeNext()
+            self.orientationRootTask.setReference(self.sampleRoot)
 
     def remove_contact_RF(self, transition_time=0.0):
         H_rf_ref = self.robot.framePosition(self.formulation.data(), self.RF)

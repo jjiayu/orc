@@ -86,9 +86,15 @@ kp_foot = 10.0          # proportional gain of contact constraint
 kp_com = 10.0           # proportional gain of center of mass task
 kp_am = 10.0            # proportional gain of angular momentum task
 kp_posture = 1.0        # proportional gain of joint posture task
+kp_rootOrientation = 100.0  # proportional gain of root orientation task
 
 from pinocchio.visualize import MeshcatVisualizer
 viewer = MeshcatVisualizer
+
+# Root orientation task parameters
+w_rootOrientation = 1.0     # weight of root orientation task
+level_rootOrientation = 1   # priority level of root orientation task
+YAW_ROT_GAIN = 0.1         # gain for yaw rotation (lower to allow some yaw movement)
 
 PRINT_N = 500           # print every PRINT_N time steps
 DISPLAY_N = 4          # update robot configuration in viwewer every DISPLAY_N time steps
