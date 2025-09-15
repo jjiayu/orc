@@ -154,6 +154,70 @@ for step in range(Num_Steps):
 print("Gait pattern:", gait_pattern)
 print("Footstep targets:", len(footstep_targets), "steps")
 
+# ============================================================================
+# FOOTSTEP VISUALIZATION IN MESHCAT
+# ============================================================================
+
+def visualize_footsteps_in_meshcat(tsid_biped, footstep_targets, loaded_footsteps=None):
+    """Visualize footsteps as boxes in meshcat"""
+    import meshcat.geometry as g
+    import meshcat.transformations as tf
+    
+    # Footstep dimensions
+    foot_length = 0.22  # x dimension
+    foot_width = 0.12   # y dimension
+    foot_height = 0.01  # z dimension (thin box)
+    
+    # Colors for left and right feet
+    left_color = 0x0000ff  # Blue
+    right_color = 0xff0000  # Red
+    
+    if hasattr(tsid_biped, 'viz') and tsid_biped.viz is not None:
+        print("Visualizing footsteps in meshcat...")
+        
+        for i, target in enumerate(footstep_targets):
+            # Determine foot type
+            if loaded_footsteps is not None and i < len(loaded_footsteps):
+                foot_type = loaded_footsteps[i]['foot']
+                yaw = loaded_footsteps[i].get('yaw', 0.0)
+            else:
+                # For hardcoded footsteps, alternate based on first_swing_foot
+                if first_swing_foot == "left":
+                    foot_type = "left" if i % 2 == 0 else "right"
+                else:
+                    foot_type = "right" if i % 2 == 0 else "left"
+                yaw = 0.0
+            
+            # Choose color
+            color = left_color if foot_type == "left" else right_color
+            
+            # Create box geometry
+            box = g.Box([foot_length, foot_width, foot_height])
+            material = g.MeshLambertMaterial(color=color, opacity=0.7)
+            
+            # Create transformation matrix
+            position = target.copy()
+            position[2] += foot_height / 2  # Raise box slightly above ground
+            
+            # Apply yaw rotation
+            transform = tf.translation_matrix(position)
+            if yaw != 0.0:
+                rotation = tf.rotation_matrix(yaw, [0, 0, 1])
+                transform = transform @ rotation
+            
+            # Add to meshcat
+            footstep_name = f"footsteps/step_{i:02d}_{foot_type}"
+            tsid_biped.viz.viewer[footstep_name].set_object(box, material)
+            tsid_biped.viz.viewer[footstep_name].set_transform(transform)
+        
+        print(f"Added {len(footstep_targets)} footstep visualizations to meshcat")
+        print("Blue boxes = left foot, Red boxes = right foot")
+    else:
+        print("Meshcat visualizer not available, skipping footstep visualization")
+
+# Visualize the footsteps
+visualize_footsteps_in_meshcat(tsid_biped, footstep_targets, loaded_footsteps)
+
 # Phase durations: 3 phases per step, repeated for all steps
 base_phase_durations = [3.0, 6.0, 3.0]  # [double, stance, double]
 phase_durations = base_phase_durations * Num_Steps
