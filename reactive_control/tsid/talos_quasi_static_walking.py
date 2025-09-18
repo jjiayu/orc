@@ -359,24 +359,24 @@ def visualize_goal(tsid_biped, footstep_targets):
 visualize_goal(tsid_biped, footstep_targets)
 
 # Phase durations: 3 phases per step, repeated for all steps
-base_phase_durations = [3.0, 6.0, 3.0]  # [double, stance, double]
+base_phase_durations = [3.0, 6.0, 3.0]#[1.5, 3.0, 1.5]  # [double, stance, double]
 phase_durations = base_phase_durations * Num_Steps
 print("Phase durations:", phase_durations)
 print("Total phases:", len(phase_durations))
 
-# Function to calculate CoM height based on stance foot positions
-def calculate_com_height(lf_pos, rf_pos, contact_phase):
-    """Calculate CoM height based on stance foot positions and contact phase"""
+# Function to calculate CoM height based on stance foot positions at phase start
+def calculate_com_height_for_phase(lf_start_pos, rf_start_pos, contact_phase):
+    """Calculate CoM height based on stance foot positions at the beginning of the phase"""
     if contact_phase == "left":
         # Left foot is stance, CoM height = left foot height + offset
-        return lf_pos[2] + CoM_Height_Offset
+        return lf_start_pos[2] + CoM_Height_Offset
     elif contact_phase == "right":
         # Right foot is stance, CoM height = right foot height + offset
-        return rf_pos[2] + CoM_Height_Offset
+        return rf_start_pos[2] + CoM_Height_Offset
     else:  # double support
-        # Use the higher of the two feet + offset for stability
-        max_foot_height = max(lf_pos[2], rf_pos[2])
-        return max_foot_height + CoM_Height_Offset
+        # Use average of both feet heights + offset
+        avg_foot_height = (lf_start_pos[2] + rf_start_pos[2]) / 2.0
+        return avg_foot_height + CoM_Height_Offset
 
 # Get current robot state for initial positions
 current_com = tsid_biped.robot.com(tsid_biped.formulation.data()).copy()
@@ -384,7 +384,7 @@ current_lf_pos = tsid_biped.get_placement_LF().translation.copy()
 current_rf_pos = tsid_biped.get_placement_RF().translation.copy()
 
 # Calculate initial CoM height based on current foot positions (double support)
-initial_com_height = calculate_com_height(current_lf_pos, current_rf_pos, "double")
+initial_com_height = calculate_com_height_for_phase(current_lf_pos, current_rf_pos, "double")
 current_com[2] = initial_com_height
 
 print(f"CoM Height Offset: {CoM_Height_Offset:.3f}m")
@@ -426,9 +426,9 @@ for phase_idx, contact_phase in enumerate(gait_pattern):
                 support_foot_pos = rf_pos.copy()
                 stance_foot = "right"
             
-            # CoM target: above support foot with dynamic height
+            # CoM target: above support foot with height based on phase start positions
             com_target = support_foot_pos.copy()
-            com_target[2] = calculate_com_height(lf_pos, rf_pos, stance_foot)
+            com_target[2] = calculate_com_height_for_phase(lf_start, rf_start, stance_foot)
         else:
             com_target = com_pos.copy()  # Stay in place
             
@@ -449,9 +449,9 @@ for phase_idx, contact_phase in enumerate(gait_pattern):
                 rf_target = rf_pos.copy()  # Support foot stays
                 stance_foot = "right"
             
-            # CoM stays above support foot with dynamic height
+            # CoM stays above support foot with height based on phase start positions
             com_target = com_pos.copy()
-            com_target[2] = calculate_com_height(lf_target, rf_target, stance_foot)
+            com_target[2] = calculate_com_height_for_phase(lf_start, rf_start, stance_foot)
         else:
             lf_target = lf_pos.copy()
             rf_target = rf_pos.copy()
@@ -462,7 +462,7 @@ for phase_idx, contact_phase in enumerate(gait_pattern):
         # Calculate midpoint between current feet positions
         midpoint = (lf_pos + rf_pos) / 2.0
         com_target = midpoint.copy()
-        com_target[2] = calculate_com_height(lf_pos, rf_pos, "double")
+        com_target[2] = calculate_com_height_for_phase(lf_start, rf_start, "double")
             
         # Feet don't move during double support
         lf_target = lf_pos.copy()
@@ -478,7 +478,10 @@ for phase_idx, contact_phase in enumerate(gait_pattern):
     lf_pos = lf_target.copy()
     rf_pos = rf_target.copy()
     
-    print(f"  CoM: [{com_start[0]:.3f}, {com_start[1]:.3f}, {com_start[2]:.3f}] -> [{com_target[0]:.3f}, {com_target[1]:.3f}, {com_target[2]:.3f}] (height: {com_target[2]:.3f})")
+    # Calculate the CoM height for this phase for debug output
+    phase_com_height = calculate_com_height_for_phase(lf_start, rf_start, contact_phase)
+    print(f"  Phase CoM height: {phase_com_height:.3f} (based on stance foot at phase start)")
+    print(f"  CoM: [{com_start[0]:.3f}, {com_start[1]:.3f}, {com_start[2]:.3f}] -> [{com_target[0]:.3f}, {com_target[1]:.3f}, {com_target[2]:.3f}]")
     print(f"  LF:  [{lf_start[0]:.3f}, {lf_start[1]:.3f}, {lf_start[2]:.3f}] -> [{lf_target[0]:.3f}, {lf_target[1]:.3f}, {lf_target[2]:.3f}]")
     print(f"  RF:  [{rf_start[0]:.3f}, {rf_start[1]:.3f}, {rf_start[2]:.3f}] -> [{rf_target[0]:.3f}, {rf_target[1]:.3f}, {rf_target[2]:.3f}]")
 
