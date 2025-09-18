@@ -82,7 +82,7 @@ tau_max_scaling = 1.45  # scaling factor of torque bounds
 v_max_scaling = 1.45
 
 kp_contact = 30.0       # proportional gain of contact constraint
-kp_foot = 10.0          # proportional gain of contact constraint
+kp_foot = 100.0          # proportional gain of contact constraint
 kp_com = 10.0           # proportional gain of center of mass task
 kp_am = 10.0            # proportional gain of angular momentum task
 kp_posture = 1.0        # proportional gain of joint posture task

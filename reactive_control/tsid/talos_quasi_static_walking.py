@@ -18,8 +18,8 @@ print("".center(conf.LINE_WIDTH, "#"))
 print(" Test Walking ".center(conf.LINE_WIDTH, "#"))
 print("".center(conf.LINE_WIDTH, "#"), "\n")
 
-CoM_Height = 0.75
-step_height = 0.10
+CoM_Height_Offset = 0.7  # Height offset above the stance foot
+step_height = 0.1
 
 USE_EIQUADPROG = 1
 USE_PROXQP = 0
@@ -99,21 +99,26 @@ else:
 
 if loaded_footsteps is not None:
     # Use loaded footsteps
-    print("Using footsteps from JSON file:")
-    for i, step in enumerate(loaded_footsteps[:5]):  # Show first 5 steps
-        pos = step['position']
-        print(f"  Step {i}: {step['foot']} foot -> [{pos[0]:.3f}, {pos[1]:.3f}, {pos[2]:.3f}], yaw: {step['yaw']:.3f}")
-    if len(loaded_footsteps) > 5:
-        print(f"  ... and {len(loaded_footsteps) - 5} more steps")
-    
     # Extract footstep targets and determine gait pattern
-    Num_Steps = len(loaded_footsteps)
+    # IMPORTANT: Skip the first footstep as it represents the current stance foot position, not a target
+    # The first entry in the JSON file is where the stance foot currently is, not where it should move to
+    actual_footsteps = loaded_footsteps[1:]  # Skip first stance foot position
+    Num_Steps = len(actual_footsteps)
     # The JSON contains stance foot labels, so we need to reverse to get swing foot
-    first_stance_foot = loaded_footsteps[0]['foot'] if loaded_footsteps else "right"
+    first_stance_foot = loaded_footsteps[0]['foot'] if loaded_footsteps else "left"
     first_swing_foot = "left" if first_stance_foot == "right" else "right"
     
-    # Create footstep targets array
-    footstep_targets = [step['position'] for step in loaded_footsteps]
+    # Create footstep targets array (excluding the first stance foot position)
+    footstep_targets = [step['position'] for step in actual_footsteps]
+    
+    print("Using footsteps from JSON file:")
+    print(f"  Initial stance: {loaded_footsteps[0]['foot']} foot at [{loaded_footsteps[0]['position'][0]:.3f}, {loaded_footsteps[0]['position'][1]:.3f}, {loaded_footsteps[0]['position'][2]:.3f}] (not used as target)")
+    print("  Stepping targets:")
+    for i, step in enumerate(actual_footsteps[:4]):  # Show first 4 actual targets
+        pos = step['position']
+        print(f"    Target {i}: {step['foot']} foot -> [{pos[0]:.3f}, {pos[1]:.3f}, {pos[2]:.3f}], yaw: {step['yaw']:.3f}")
+    if len(actual_footsteps) > 4:
+        print(f"    ... and {len(actual_footsteps) - 4} more targets")
     
 else:
     # Use hardcoded footsteps (original implementation)
@@ -177,9 +182,16 @@ def visualize_footsteps_in_meshcat(tsid_biped, footstep_targets, loaded_footstep
         
         for i, target in enumerate(footstep_targets):
             # Determine foot type
-            if loaded_footsteps is not None and i < len(loaded_footsteps):
-                foot_type = loaded_footsteps[i]['foot']
-                yaw = loaded_footsteps[i].get('yaw', 0.0)
+            if loaded_footsteps is not None:
+                # For loaded footsteps, we need to map back to the original footstep data
+                # The footstep_targets array corresponds to loaded_footsteps[i] (all footsteps including stance)
+                original_index = i  # Direct mapping since footstep_targets now includes all positions
+                if original_index < len(loaded_footsteps):
+                    foot_type = loaded_footsteps[original_index]['foot']
+                    yaw = loaded_footsteps[original_index].get('yaw', 0.0)
+                else:
+                    foot_type = "left"  # fallback
+                    yaw = 0.0
             else:
                 # For hardcoded footsteps, alternate based on first_swing_foot
                 if first_swing_foot == "left":
@@ -291,10 +303,60 @@ def load_and_visualize_environment(tsid_biped, env_file="stairs_up_and_down"):
         print("Meshcat visualizer not available, skipping environment visualization")
 
 # Load and visualize the narrow passage environment
-load_and_visualize_environment(tsid_biped, "stairs_up_and_down")
+load_and_visualize_environment(tsid_biped, "threepathnas")
 
-# Visualize the footsteps
-visualize_footsteps_in_meshcat(tsid_biped, footstep_targets, loaded_footsteps)
+# Visualize the footsteps (show all footsteps including initial stance position)
+if loaded_footsteps is not None:
+    # For visualization, show all footsteps including the initial stance position
+    all_footstep_positions = [step['position'] for step in loaded_footsteps]
+    visualize_footsteps_in_meshcat(tsid_biped, all_footstep_positions, loaded_footsteps)
+else:
+    # For hardcoded footsteps, add the current foot positions as initial stance
+    current_lf_pos = tsid_biped.get_placement_LF().translation.copy()
+    current_rf_pos = tsid_biped.get_placement_RF().translation.copy()
+    if first_swing_foot == "left":
+        # Right foot is initial stance
+        all_footstep_positions = [current_rf_pos] + footstep_targets
+    else:
+        # Left foot is initial stance  
+        all_footstep_positions = [current_lf_pos] + footstep_targets
+    visualize_footsteps_in_meshcat(tsid_biped, all_footstep_positions, None)
+
+# ============================================================================
+# GOAL VISUALIZATION
+# ============================================================================
+
+def visualize_goal(tsid_biped, footstep_targets):
+    """Visualize goal as a circle at the last footstep position"""
+    import meshcat.geometry as g
+    import meshcat.transformations as tf
+    
+    if hasattr(tsid_biped, 'viz') and tsid_biped.viz is not None and len(footstep_targets) > 0:
+        # Get the last footstep position
+        last_footstep = footstep_targets[-1]
+        
+        # Goal ball parameters
+        goal_radius = 0.025
+        goal_color = 0xFFD700  # Gold color
+        
+        # Create sphere geometry for the goal ball
+        goal_ball = g.Sphere(goal_radius)
+        goal_material = g.MeshLambertMaterial(color=goal_color, opacity=0.8)
+        
+        # Position the goal ball so it's half inside the surface (center at half radius height)
+        goal_pos = [last_footstep[0], last_footstep[1], goal_radius / 2]
+        goal_transform = tf.translation_matrix(goal_pos)
+        
+        # Add to meshcat
+        tsid_biped.viz.viewer["goal/target_circle"].set_object(goal_ball, goal_material)
+        tsid_biped.viz.viewer["goal/target_circle"].set_transform(goal_transform)
+        
+        print(f"Added goal visualization at [{goal_pos[0]:.2f}, {goal_pos[1]:.2f}, {goal_pos[2]:.2f}]")
+    else:
+        print("Meshcat visualizer not available or no footsteps, skipping goal visualization")
+
+# Visualize the goal
+visualize_goal(tsid_biped, footstep_targets)
 
 # Phase durations: 3 phases per step, repeated for all steps
 base_phase_durations = [3.0, 6.0, 3.0]  # [double, stance, double]
@@ -302,13 +364,31 @@ phase_durations = base_phase_durations * Num_Steps
 print("Phase durations:", phase_durations)
 print("Total phases:", len(phase_durations))
 
+# Function to calculate CoM height based on stance foot positions
+def calculate_com_height(lf_pos, rf_pos, contact_phase):
+    """Calculate CoM height based on stance foot positions and contact phase"""
+    if contact_phase == "left":
+        # Left foot is stance, CoM height = left foot height + offset
+        return lf_pos[2] + CoM_Height_Offset
+    elif contact_phase == "right":
+        # Right foot is stance, CoM height = right foot height + offset
+        return rf_pos[2] + CoM_Height_Offset
+    else:  # double support
+        # Use the higher of the two feet + offset for stability
+        max_foot_height = max(lf_pos[2], rf_pos[2])
+        return max_foot_height + CoM_Height_Offset
+
 # Get current robot state for initial positions
 current_com = tsid_biped.robot.com(tsid_biped.formulation.data()).copy()
-current_com[2] = CoM_Height  # Set desired CoM height
 current_lf_pos = tsid_biped.get_placement_LF().translation.copy()
 current_rf_pos = tsid_biped.get_placement_RF().translation.copy()
 
-print(f"Initial CoM: [{current_com[0]:.3f}, {current_com[1]:.3f}, {current_com[2]:.3f}]")
+# Calculate initial CoM height based on current foot positions (double support)
+initial_com_height = calculate_com_height(current_lf_pos, current_rf_pos, "double")
+current_com[2] = initial_com_height
+
+print(f"CoM Height Offset: {CoM_Height_Offset:.3f}m")
+print(f"Initial CoM: [{current_com[0]:.3f}, {current_com[1]:.3f}, {current_com[2]:.3f}] (dynamic height)")
 print(f"Initial LF:  [{current_lf_pos[0]:.3f}, {current_lf_pos[1]:.3f}, {current_lf_pos[2]:.3f}]")
 print(f"Initial RF:  [{current_rf_pos[0]:.3f}, {current_rf_pos[1]:.3f}, {current_rf_pos[2]:.3f}]")
 
@@ -341,12 +421,14 @@ for phase_idx, contact_phase in enumerate(gait_pattern):
             swing_foot = gait_pattern[phase_idx + 1]  # Next phase is the swing phase
             if swing_foot == "right":  # Right foot will swing, so left foot is support
                 support_foot_pos = lf_pos.copy()
+                stance_foot = "left"
             else:  # Left foot will swing, so right foot is support
                 support_foot_pos = rf_pos.copy()
+                stance_foot = "right"
             
-            # CoM target: above support foot
+            # CoM target: above support foot with dynamic height
             com_target = support_foot_pos.copy()
-            com_target[2] = CoM_Height
+            com_target[2] = calculate_com_height(lf_pos, rf_pos, stance_foot)
         else:
             com_target = com_pos.copy()  # Stay in place
             
@@ -355,28 +437,32 @@ for phase_idx, contact_phase in enumerate(gait_pattern):
         rf_target = rf_pos.copy()
         
     elif phase_in_step == 1:  # Single support phase (swing phase)
-        # CoM stays above support foot
-        com_target = com_pos.copy()
-        
         # Swing foot moves to target position
         if step_number < len(footstep_targets):
             swing_foot = contact_phase  # Current phase tells us which foot swings
             if swing_foot == "right":  # Right foot swings, left foot supports
                 rf_target = footstep_targets[step_number].copy()
                 lf_target = lf_pos.copy()  # Support foot stays
+                stance_foot = "left"
             else:  # Left foot swings, right foot supports
                 lf_target = footstep_targets[step_number].copy()
                 rf_target = rf_pos.copy()  # Support foot stays
+                stance_foot = "right"
+            
+            # CoM stays above support foot with dynamic height
+            com_target = com_pos.copy()
+            com_target[2] = calculate_com_height(lf_target, rf_target, stance_foot)
         else:
             lf_target = lf_pos.copy()
             rf_target = rf_pos.copy()
+            com_target = com_pos.copy()
             
     else:  # phase_in_step == 2: Second double support phase
         # CoM moves to midpoint between feet for stabilization
         # Calculate midpoint between current feet positions
         midpoint = (lf_pos + rf_pos) / 2.0
         com_target = midpoint.copy()
-        com_target[2] = CoM_Height
+        com_target[2] = calculate_com_height(lf_pos, rf_pos, "double")
             
         # Feet don't move during double support
         lf_target = lf_pos.copy()
@@ -392,7 +478,7 @@ for phase_idx, contact_phase in enumerate(gait_pattern):
     lf_pos = lf_target.copy()
     rf_pos = rf_target.copy()
     
-    print(f"  CoM: [{com_start[0]:.3f}, {com_start[1]:.3f}, {com_start[2]:.3f}] -> [{com_target[0]:.3f}, {com_target[1]:.3f}, {com_target[2]:.3f}]")
+    print(f"  CoM: [{com_start[0]:.3f}, {com_start[1]:.3f}, {com_start[2]:.3f}] -> [{com_target[0]:.3f}, {com_target[1]:.3f}, {com_target[2]:.3f}] (height: {com_target[2]:.3f})")
     print(f"  LF:  [{lf_start[0]:.3f}, {lf_start[1]:.3f}, {lf_start[2]:.3f}] -> [{lf_target[0]:.3f}, {lf_target[1]:.3f}, {lf_target[2]:.3f}]")
     print(f"  RF:  [{rf_start[0]:.3f}, {rf_start[1]:.3f}, {rf_start[2]:.3f}] -> [{rf_target[0]:.3f}, {rf_target[1]:.3f}, {rf_target[2]:.3f}]")
 
