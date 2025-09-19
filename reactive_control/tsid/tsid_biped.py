@@ -223,6 +223,30 @@ class TsidBiped:
         self.sampleRF.vel(self.sample_RF_vel)
         self.sampleRF.acc(self.sample_RF_acc)
         self.rightFootTask.setReference(self.sampleRF)
+    
+    def set_RF_6d_ref(self, pos, vel, acc, yaw, yaw_vel=0.0, yaw_acc=0.0):
+        """Set 6-DOF reference for right foot including yaw rotation"""
+        # Create SE3 transformation with position and yaw rotation
+        R = pin.utils.rpyToMatrix(0, 0, yaw)  # roll=0, pitch=0, yaw=yaw
+        H_ref = pin.SE3(R, pos)
+        
+        # Set reference using SE3 trajectory
+        self.trajRF.setReference(H_ref)
+        self.sampleRF = self.trajRF.computeNext()
+        
+        # Update the sample with desired velocities and accelerations
+        # For SE3 samples, we need to set the 6D motion (linear + angular)
+        motion_vel = np.zeros(6)
+        motion_vel[:3] = vel  # linear velocity
+        motion_vel[3:] = [0, 0, yaw_vel]  # angular velocity (only yaw)
+        
+        motion_acc = np.zeros(6)
+        motion_acc[:3] = acc  # linear acceleration
+        motion_acc[3:] = [0, 0, yaw_acc]  # angular acceleration (only yaw)
+        
+        self.sampleRF.vel(motion_vel)
+        self.sampleRF.acc(motion_acc)
+        self.rightFootTask.setReference(self.sampleRF)
 
     def set_LF_3d_ref(self, pos, vel, acc):
         self.sample_LF_pos[:3] = pos
@@ -231,6 +255,30 @@ class TsidBiped:
         self.sampleLF.pos(self.sample_LF_pos)
         self.sampleLF.vel(self.sample_LF_vel)
         self.sampleLF.acc(self.sample_LF_acc)
+        self.leftFootTask.setReference(self.sampleLF)
+    
+    def set_LF_6d_ref(self, pos, vel, acc, yaw, yaw_vel=0.0, yaw_acc=0.0):
+        """Set 6-DOF reference for left foot including yaw rotation"""
+        # Create SE3 transformation with position and yaw rotation
+        R = pin.utils.rpyToMatrix(0, 0, yaw)  # roll=0, pitch=0, yaw=yaw
+        H_ref = pin.SE3(R, pos)
+        
+        # Set reference using SE3 trajectory
+        self.trajLF.setReference(H_ref)
+        self.sampleLF = self.trajLF.computeNext()
+        
+        # Update the sample with desired velocities and accelerations
+        # For SE3 samples, we need to set the 6D motion (linear + angular)
+        motion_vel = np.zeros(6)
+        motion_vel[:3] = vel  # linear velocity
+        motion_vel[3:] = [0, 0, yaw_vel]  # angular velocity (only yaw)
+        
+        motion_acc = np.zeros(6)
+        motion_acc[:3] = acc  # linear acceleration
+        motion_acc[3:] = [0, 0, yaw_acc]  # angular acceleration (only yaw)
+        
+        self.sampleLF.vel(motion_vel)
+        self.sampleLF.acc(motion_acc)
         self.leftFootTask.setReference(self.sampleLF)
 
     def get_LF_3d_pos_vel_acc(self, dv):
@@ -246,6 +294,20 @@ class TsidBiped:
         v = self.robot.frameVelocity(data, self.RF)
         a = self.rightFootTask.getAcceleration(dv)
         return H.translation, v.linear, a[:3]
+    
+    def get_LF_yaw(self):
+        """Get current yaw angle of left foot"""
+        data = self.formulation.data()
+        H = self.robot.framePosition(data, self.LF)
+        rpy = pin.rpy.matrixToRpy(H.rotation)
+        return rpy[2]  # yaw angle
+    
+    def get_RF_yaw(self):
+        """Get current yaw angle of right foot"""
+        data = self.formulation.data()
+        H = self.robot.framePosition(data, self.RF)
+        rpy = pin.rpy.matrixToRpy(H.rotation)
+        return rpy[2]  # yaw angle
 
     def set_root_orientation_ref(self, orientation_matrix):
         """Set root orientation reference to keep torso upright"""
@@ -255,6 +317,24 @@ class TsidBiped:
             self.trajRoot.setReference(H_ref)
             self.sampleRoot = self.trajRoot.computeNext()
             self.orientationRootTask.setReference(self.sampleRoot)
+    
+    def set_root_yaw_ref(self, yaw_angle):
+        """Set root yaw reference to follow stance foot orientation"""
+        if self.orientationRootTask is not None:
+            # Create rotation matrix with only yaw rotation (roll=0, pitch=0)
+            R_ref = pin.utils.rpyToMatrix(0, 0, yaw_angle)
+            H_ref = pin.SE3(R_ref, np.zeros(3))
+            self.trajRoot.setReference(H_ref)
+            self.sampleRoot = self.trajRoot.computeNext()
+            self.orientationRootTask.setReference(self.sampleRoot)
+    
+    def get_root_yaw(self):
+        """Get current root yaw angle"""
+        data = self.formulation.data()
+        root_frame_id = self.robot.model().getFrameId('root_joint')
+        H_root = self.robot.framePosition(data, root_frame_id)
+        rpy = pin.rpy.matrixToRpy(H_root.rotation)
+        return rpy[2]  # yaw angle
 
     def remove_contact_RF(self, transition_time=0.0):
         H_rf_ref = self.robot.framePosition(self.formulation.data(), self.RF)

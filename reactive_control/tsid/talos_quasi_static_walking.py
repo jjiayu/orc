@@ -18,7 +18,7 @@ print("".center(conf.LINE_WIDTH, "#"))
 print(" Test Walking ".center(conf.LINE_WIDTH, "#"))
 print("".center(conf.LINE_WIDTH, "#"), "\n")
 
-CoM_Height_Offset = 0.7  # Height offset above the stance foot
+CoM_Height_Offset = 0.6  # Height offset above the stance foot
 step_height = 0.1
 
 USE_EIQUADPROG = 1
@@ -231,7 +231,7 @@ def visualize_footsteps_in_meshcat(tsid_biped, footstep_targets, loaded_footstep
 # ENVIRONMENT VISUALIZATION FROM ENV FILE
 # ============================================================================
 
-def load_and_visualize_environment(tsid_biped, env_file="stairs_up_and_down"):
+def load_and_visualize_environment(tsid_biped, env_file="threepathnas"):
     """Load environment from env file and visualize surfaces in meshcat"""
     import meshcat.geometry as g
     import meshcat.transformations as tf
@@ -303,7 +303,7 @@ def load_and_visualize_environment(tsid_biped, env_file="stairs_up_and_down"):
         print("Meshcat visualizer not available, skipping environment visualization")
 
 # Load and visualize the narrow passage environment
-load_and_visualize_environment(tsid_biped, "threepathnas")
+load_and_visualize_environment(tsid_biped, "narrow_passage")
 
 # Visualize the footsteps (show all footsteps including initial stance position)
 if loaded_footsteps is not None:
@@ -398,11 +398,25 @@ com_path = []
 lf_path = []
 # Create right foot path: [start_pos, end_pos] for each phase
 rf_path = []
+# Create left foot yaw path: [start_yaw, end_yaw] for each phase
+lf_yaw_path = []
+# Create right foot yaw path: [start_yaw, end_yaw] for each phase
+rf_yaw_path = []
+# Create base yaw path: [start_yaw, end_yaw] for each phase
+base_yaw_path = []
 
-# Initialize positions
+# Initialize positions and orientations
 com_pos = current_com.copy()
 lf_pos = current_lf_pos.copy()
 rf_pos = current_rf_pos.copy()
+# Get initial foot yaw angles and base yaw
+lf_yaw = tsid_biped.get_LF_yaw()
+rf_yaw = tsid_biped.get_RF_yaw()
+base_yaw = tsid_biped.get_root_yaw()
+
+print(f"Initial LF yaw: {lf_yaw:.3f} rad ({np.degrees(lf_yaw):.1f}°)")
+print(f"Initial RF yaw: {rf_yaw:.3f} rad ({np.degrees(rf_yaw):.1f}°)")
+print(f"Initial base yaw: {base_yaw:.3f} rad ({np.degrees(base_yaw):.1f}°)")
 
 for phase_idx, contact_phase in enumerate(gait_pattern):
     step_number = phase_idx // 3  # Which step we're in (0, 1, 2, ...)
@@ -410,10 +424,13 @@ for phase_idx, contact_phase in enumerate(gait_pattern):
     
     print(f"\nPhase {phase_idx}: {contact_phase} (Step {step_number}, Phase {phase_in_step})")
     
-    # Store starting positions for this phase
+    # Store starting positions and orientations for this phase
     com_start = com_pos.copy()
     lf_start = lf_pos.copy()
     rf_start = rf_pos.copy()
+    lf_yaw_start = lf_yaw
+    rf_yaw_start = rf_yaw
+    base_yaw_start = base_yaw
     
     if phase_in_step == 0:  # First double support phase of a step
         # CoM moves towards the support foot (opposite of swing foot in next phase)
@@ -435,6 +452,10 @@ for phase_idx, contact_phase in enumerate(gait_pattern):
         # Feet don't move during double support
         lf_target = lf_pos.copy()
         rf_target = rf_pos.copy()
+        lf_yaw_target = lf_yaw
+        rf_yaw_target = rf_yaw
+        # Base yaw follows average of both feet during double support preparation
+        base_yaw_target = (lf_yaw + rf_yaw) / 2.0
         
     elif phase_in_step == 1:  # Single support phase (swing phase)
         # Swing foot moves to target position
@@ -444,10 +465,26 @@ for phase_idx, contact_phase in enumerate(gait_pattern):
                 rf_target = footstep_targets[step_number].copy()
                 lf_target = lf_pos.copy()  # Support foot stays
                 stance_foot = "left"
+                # Get yaw from JSON for swinging foot
+                if loaded_footsteps is not None and step_number + 1 < len(loaded_footsteps):
+                    rf_yaw_target = loaded_footsteps[step_number + 1]['yaw']  # +1 because we skipped first
+                else:
+                    rf_yaw_target = rf_yaw
+                lf_yaw_target = lf_yaw  # Support foot keeps current yaw
+                # Base yaw follows stance foot (left foot)
+                base_yaw_target = lf_yaw
             else:  # Left foot swings, right foot supports
                 lf_target = footstep_targets[step_number].copy()
                 rf_target = rf_pos.copy()  # Support foot stays
                 stance_foot = "right"
+                # Get yaw from JSON for swinging foot
+                if loaded_footsteps is not None and step_number + 1 < len(loaded_footsteps):
+                    lf_yaw_target = loaded_footsteps[step_number + 1]['yaw']  # +1 because we skipped first
+                else:
+                    lf_yaw_target = lf_yaw
+                rf_yaw_target = rf_yaw  # Support foot keeps current yaw
+                # Base yaw follows stance foot (right foot)
+                base_yaw_target = rf_yaw
             
             # CoM stays above support foot with height based on phase start positions
             com_target = com_pos.copy()
@@ -455,6 +492,9 @@ for phase_idx, contact_phase in enumerate(gait_pattern):
         else:
             lf_target = lf_pos.copy()
             rf_target = rf_pos.copy()
+            lf_yaw_target = lf_yaw
+            rf_yaw_target = rf_yaw
+            base_yaw_target = base_yaw  # Keep current base yaw
             com_target = com_pos.copy()
             
     else:  # phase_in_step == 2: Second double support phase
@@ -467,23 +507,34 @@ for phase_idx, contact_phase in enumerate(gait_pattern):
         # Feet don't move during double support
         lf_target = lf_pos.copy()
         rf_target = rf_pos.copy()
+        lf_yaw_target = lf_yaw
+        rf_yaw_target = rf_yaw
+        # Base yaw interpolates between current feet during final double support
+        base_yaw_target = (lf_yaw + rf_yaw) / 2.0
     
     # Store paths for this phase
     com_path.append([com_start, com_target])
     lf_path.append([lf_start, lf_target])
     rf_path.append([rf_start, rf_target])
+    lf_yaw_path.append([lf_yaw_start, lf_yaw_target])
+    rf_yaw_path.append([rf_yaw_start, rf_yaw_target])
+    base_yaw_path.append([base_yaw_start, base_yaw_target])
     
-    # Update positions for next phase
+    # Update positions and orientations for next phase
     com_pos = com_target.copy()
     lf_pos = lf_target.copy()
     rf_pos = rf_target.copy()
+    lf_yaw = lf_yaw_target
+    rf_yaw = rf_yaw_target
+    base_yaw = base_yaw_target
     
     # Calculate the CoM height for this phase for debug output
     phase_com_height = calculate_com_height_for_phase(lf_start, rf_start, contact_phase)
     print(f"  Phase CoM height: {phase_com_height:.3f} (based on stance foot at phase start)")
     print(f"  CoM: [{com_start[0]:.3f}, {com_start[1]:.3f}, {com_start[2]:.3f}] -> [{com_target[0]:.3f}, {com_target[1]:.3f}, {com_target[2]:.3f}]")
-    print(f"  LF:  [{lf_start[0]:.3f}, {lf_start[1]:.3f}, {lf_start[2]:.3f}] -> [{lf_target[0]:.3f}, {lf_target[1]:.3f}, {lf_target[2]:.3f}]")
-    print(f"  RF:  [{rf_start[0]:.3f}, {rf_start[1]:.3f}, {rf_start[2]:.3f}] -> [{rf_target[0]:.3f}, {rf_target[1]:.3f}, {rf_target[2]:.3f}]")
+    print(f"  LF:  [{lf_start[0]:.3f}, {lf_start[1]:.3f}, {lf_start[2]:.3f}] -> [{lf_target[0]:.3f}, {lf_target[1]:.3f}, {lf_target[2]:.3f}] | yaw: {np.degrees(lf_yaw_start):.1f}° -> {np.degrees(lf_yaw_target):.1f}°")
+    print(f"  RF:  [{rf_start[0]:.3f}, {rf_start[1]:.3f}, {rf_start[2]:.3f}] -> [{rf_target[0]:.3f}, {rf_target[1]:.3f}, {rf_target[2]:.3f}] | yaw: {np.degrees(rf_yaw_start):.1f}° -> {np.degrees(rf_yaw_target):.1f}°")
+    print(f"  Base yaw: {np.degrees(base_yaw_start):.1f}° -> {np.degrees(base_yaw_target):.1f}°")
 
 print(f"\nGait pattern setup completed!")
 print(f"Total phases: {len(gait_pattern)}")
@@ -510,6 +561,17 @@ lf_acc_traj = np.zeros((3, N))
 rf_pos_traj = np.zeros((3, N))
 rf_vel_traj = np.zeros((3, N))
 rf_acc_traj = np.zeros((3, N))
+# Add yaw trajectory arrays
+lf_yaw_traj = np.zeros(N)
+lf_yaw_vel_traj = np.zeros(N)
+lf_yaw_acc_traj = np.zeros(N)
+rf_yaw_traj = np.zeros(N)
+rf_yaw_vel_traj = np.zeros(N)
+rf_yaw_acc_traj = np.zeros(N)
+# Add base yaw trajectory arrays
+base_yaw_traj = np.zeros(N)
+base_yaw_vel_traj = np.zeros(N)
+base_yaw_acc_traj = np.zeros(N)
 contact_pattern = []
 
 # Generate trajectories for each phase
@@ -528,6 +590,13 @@ for phase_idx in range(len(gait_pattern)):
     lf_end = lf_path[phase_idx][1]
     rf_start = rf_path[phase_idx][0]
     rf_end = rf_path[phase_idx][1]
+    # Get start and end yaw angles for this phase
+    lf_yaw_start = lf_yaw_path[phase_idx][0]
+    lf_yaw_end = lf_yaw_path[phase_idx][1]
+    rf_yaw_start = rf_yaw_path[phase_idx][0]
+    rf_yaw_end = rf_yaw_path[phase_idx][1]
+    base_yaw_start = base_yaw_path[phase_idx][0]
+    base_yaw_end = base_yaw_path[phase_idx][1]
     
     # Generate CoM trajectory using 5th order polynomial
     if np.allclose(com_start, com_end):
@@ -538,6 +607,31 @@ for phase_idx in range(len(gait_pattern)):
     else:
         com_pos_phase, com_vel_phase, com_acc_phase = compute_5th_order_poly_traj(
             com_start, com_end, phase_duration, conf.dt)
+    
+    # Generate yaw trajectories using linear interpolation
+    def generate_yaw_trajectory(yaw_start, yaw_end, duration, dt):
+        """Generate linear yaw trajectory"""
+        N_steps = int(duration / dt)
+        if abs(yaw_end - yaw_start) < 1e-6:
+            # No yaw change
+            yaw_traj = np.full(N_steps, yaw_start)
+            yaw_vel_traj = np.zeros(N_steps)
+            yaw_acc_traj = np.zeros(N_steps)
+        else:
+            # Linear interpolation for yaw
+            time_vec = np.linspace(0, duration, N_steps)
+            yaw_traj = yaw_start + (yaw_end - yaw_start) * time_vec / duration
+            yaw_vel_traj = np.full(N_steps, (yaw_end - yaw_start) / duration)
+            yaw_acc_traj = np.zeros(N_steps)
+        return yaw_traj, yaw_vel_traj, yaw_acc_traj
+    
+    # Generate yaw trajectories for both feet and base
+    lf_yaw_phase, lf_yaw_vel_phase, lf_yaw_acc_phase = generate_yaw_trajectory(
+        lf_yaw_start, lf_yaw_end, phase_duration, conf.dt)
+    rf_yaw_phase, rf_yaw_vel_phase, rf_yaw_acc_phase = generate_yaw_trajectory(
+        rf_yaw_start, rf_yaw_end, phase_duration, conf.dt)
+    base_yaw_phase, base_yaw_vel_phase, base_yaw_acc_phase = generate_yaw_trajectory(
+        base_yaw_start, base_yaw_end, phase_duration, conf.dt)
     
     # Generate foot trajectories based on contact phase
     if contact_phase == "double":
@@ -600,6 +694,16 @@ for phase_idx in range(len(gait_pattern)):
     rf_pos_traj[:, time_idx:end_idx] = rf_pos_phase[:, :actual_N]
     rf_vel_traj[:, time_idx:end_idx] = rf_vel_phase[:, :actual_N]
     rf_acc_traj[:, time_idx:end_idx] = rf_acc_phase[:, :actual_N]
+    # Store yaw trajectories
+    lf_yaw_traj[time_idx:end_idx] = lf_yaw_phase[:actual_N]
+    lf_yaw_vel_traj[time_idx:end_idx] = lf_yaw_vel_phase[:actual_N]
+    lf_yaw_acc_traj[time_idx:end_idx] = lf_yaw_acc_phase[:actual_N]
+    rf_yaw_traj[time_idx:end_idx] = rf_yaw_phase[:actual_N]
+    rf_yaw_vel_traj[time_idx:end_idx] = rf_yaw_vel_phase[:actual_N]
+    rf_yaw_acc_traj[time_idx:end_idx] = rf_yaw_acc_phase[:actual_N]
+    base_yaw_traj[time_idx:end_idx] = base_yaw_phase[:actual_N]
+    base_yaw_vel_traj[time_idx:end_idx] = base_yaw_vel_phase[:actual_N]
+    base_yaw_acc_traj[time_idx:end_idx] = base_yaw_acc_phase[:actual_N]
     
     # Generate contact pattern (stance foot at each timestep)
     for i in range(actual_N):
@@ -666,20 +770,30 @@ for i in range(-N_pre, N + N_post):
     
     # Set reference trajectories
     if i < 0:
-        # Preparation phase: hold initial position
+        # Preparation phase: hold initial position with initial yaw
         tsid_biped.set_com_ref(current_com, np.zeros(3), np.zeros(3))
-        tsid_biped.set_LF_3d_ref(current_lf_pos, np.zeros(3), np.zeros(3))
-        tsid_biped.set_RF_3d_ref(current_rf_pos, np.zeros(3), np.zeros(3))
+        initial_lf_yaw = tsid_biped.get_LF_yaw()
+        initial_rf_yaw = tsid_biped.get_RF_yaw()
+        initial_base_yaw = tsid_biped.get_root_yaw()
+        tsid_biped.set_LF_6d_ref(current_lf_pos, np.zeros(3), np.zeros(3), initial_lf_yaw, 0.0, 0.0)
+        tsid_biped.set_RF_6d_ref(current_rf_pos, np.zeros(3), np.zeros(3), initial_rf_yaw, 0.0, 0.0)
+        tsid_biped.set_root_yaw_ref(initial_base_yaw)
     elif i < N:
-        # Main trajectory phase
+        # Main trajectory phase with 6-DOF foot tracking and base yaw tracking
         tsid_biped.set_com_ref(com_pos_traj[:, i], com_vel_traj[:, i], com_acc_traj[:, i])
-        tsid_biped.set_LF_3d_ref(lf_pos_traj[:, i], lf_vel_traj[:, i], lf_acc_traj[:, i])
-        tsid_biped.set_RF_3d_ref(rf_pos_traj[:, i], rf_vel_traj[:, i], rf_acc_traj[:, i])
+        tsid_biped.set_LF_6d_ref(lf_pos_traj[:, i], lf_vel_traj[:, i], lf_acc_traj[:, i], 
+                                lf_yaw_traj[i], lf_yaw_vel_traj[i], lf_yaw_acc_traj[i])
+        tsid_biped.set_RF_6d_ref(rf_pos_traj[:, i], rf_vel_traj[:, i], rf_acc_traj[:, i],
+                                rf_yaw_traj[i], rf_yaw_vel_traj[i], rf_yaw_acc_traj[i])
+        tsid_biped.set_root_yaw_ref(base_yaw_traj[i])
     else:
-        # Post-trajectory phase: hold final position
+        # Post-trajectory phase: hold final position with final yaw
         tsid_biped.set_com_ref(com_pos_traj[:, -1], np.zeros(3), np.zeros(3))
-        tsid_biped.set_LF_3d_ref(lf_pos_traj[:, -1], np.zeros(3), np.zeros(3))
-        tsid_biped.set_RF_3d_ref(rf_pos_traj[:, -1], np.zeros(3), np.zeros(3))
+        tsid_biped.set_LF_6d_ref(lf_pos_traj[:, -1], np.zeros(3), np.zeros(3), 
+                                lf_yaw_traj[-1], 0.0, 0.0)
+        tsid_biped.set_RF_6d_ref(rf_pos_traj[:, -1], np.zeros(3), np.zeros(3),
+                                rf_yaw_traj[-1], 0.0, 0.0)
+        tsid_biped.set_root_yaw_ref(base_yaw_traj[-1])
     
     # Solve QP problem
     HQPData = tsid_biped.formulation.computeProblemData(t, q, v)
@@ -723,10 +837,19 @@ for i in range(-N_pre, N + N_post):
             rf_target = rf_pos_traj[:, i]
             lf_actual = tsid_biped.get_placement_LF().translation
             rf_actual = tsid_biped.get_placement_RF().translation
-            print(f"  LF target:   [{lf_target[0]:.3f}, {lf_target[1]:.3f}, {lf_target[2]:.3f}]")
-            print(f"  LF actual:   [{lf_actual[0]:.3f}, {lf_actual[1]:.3f}, {lf_actual[2]:.3f}]")
-            print(f"  RF target:   [{rf_target[0]:.3f}, {rf_target[1]:.3f}, {rf_target[2]:.3f}]")
-            print(f"  RF actual:   [{rf_actual[0]:.3f}, {rf_actual[1]:.3f}, {rf_actual[2]:.3f}]")
+            # Foot yaw targets vs actual
+            lf_yaw_target = lf_yaw_traj[i]
+            rf_yaw_target = rf_yaw_traj[i]
+            base_yaw_target = base_yaw_traj[i]
+            lf_yaw_actual = tsid_biped.get_LF_yaw()
+            rf_yaw_actual = tsid_biped.get_RF_yaw()
+            base_yaw_actual = tsid_biped.get_root_yaw()
+            
+            print(f"  LF target:   [{lf_target[0]:.3f}, {lf_target[1]:.3f}, {lf_target[2]:.3f}] | yaw: {np.degrees(lf_yaw_target):.1f}°")
+            print(f"  LF actual:   [{lf_actual[0]:.3f}, {lf_actual[1]:.3f}, {lf_actual[2]:.3f}] | yaw: {np.degrees(lf_yaw_actual):.1f}°")
+            print(f"  RF target:   [{rf_target[0]:.3f}, {rf_target[1]:.3f}, {rf_target[2]:.3f}] | yaw: {np.degrees(rf_yaw_target):.1f}°")
+            print(f"  RF actual:   [{rf_actual[0]:.3f}, {rf_actual[1]:.3f}, {rf_actual[2]:.3f}] | yaw: {np.degrees(rf_yaw_actual):.1f}°")
+            print(f"  Base target: {np.degrees(base_yaw_target):.1f}° | Base actual: {np.degrees(base_yaw_actual):.1f}°")
             
         print(f"  ||v||: {norm(v, 2):.3f}, ||dv||: {norm(dv):.3f}")
     

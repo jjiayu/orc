@@ -16,10 +16,10 @@ dt = 0.002           # controller time step
 T_pre = 1.5  # simulation time before starting to walk
 T_post = 1.5  # simulation time after walking
 
-lxp = 0.10*2                                  # foot length in positive x direction
-lxn = 0.10*2                                  # foot length in negative x direction
-lyp = 0.065*3                                  # foot length in positive y direction
-lyn = 0.065*3                                  # foot length in negative y direction
+lxp = 0.10*3                                  # foot length in positive x direction
+lxn = 0.10*3                                  # foot length in negative x direction
+lyp = 0.065*4                                  # foot length in positive y direction
+lyn = 0.065*4                                  # foot length in negative y direction
 lz = 0.                                     # foot sole height with respect to ankle joint
 mu = 1.0                                    # friction coefficient
 fMin = 5.0                                  # minimum normal force
