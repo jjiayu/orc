@@ -18,7 +18,7 @@ print("".center(conf.LINE_WIDTH, "#"))
 print(" Test Walking ".center(conf.LINE_WIDTH, "#"))
 print("".center(conf.LINE_WIDTH, "#"), "\n")
 
-CoM_Height_Offset = 0.6  # Height offset above the stance foot
+CoM_Height_Offset = 0.7  # Height offset above the stance foot
 step_height = 0.1
 
 USE_EIQUADPROG = 1
@@ -303,7 +303,7 @@ def load_and_visualize_environment(tsid_biped, env_file="threepathnas"):
         print("Meshcat visualizer not available, skipping environment visualization")
 
 # Load and visualize the narrow passage environment
-load_and_visualize_environment(tsid_biped, "narrow_passage")
+load_and_visualize_environment(tsid_biped, "threepathnas")
 
 # Visualize the footsteps (show all footsteps including initial stance position)
 if loaded_footsteps is not None:
