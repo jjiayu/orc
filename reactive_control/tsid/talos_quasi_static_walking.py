@@ -18,7 +18,7 @@ print("".center(conf.LINE_WIDTH, "#"))
 print(" Test Walking ".center(conf.LINE_WIDTH, "#"))
 print("".center(conf.LINE_WIDTH, "#"), "\n")
 
-CoM_Height_Offset = 0.7  # Height offset above the stance foot
+CoM_Height_Offset = 0.6  # Height offset above the stance foot
 step_height = 0.1
 
 USE_EIQUADPROG = 1
