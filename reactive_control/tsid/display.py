@@ -419,7 +419,16 @@ if sim_data is not None:
 else:
     print("Could not load simulation data. Please run the walking simulation first.")
 
-sleep_time = 5.0
+# Wait for user input before starting automatic displays
+print("\n" + "="*60)
+print("AUTOMATIC DISPLAY SEQUENCE")
+print("="*60)
+print("Press ENTER to start the automatic display sequence...")
+print("(This will show robot configurations at various time points with 2.5s delays)")
+input("Press ENTER to continue: ")
+
+print("\nStarting automatic display sequence...")
+sleep_time = 2.5
 
 display_configuration_at_time(tsid_biped, sim_data, target_time=0.0)
 time.sleep(sleep_time)
@@ -480,7 +489,7 @@ display_configuration_at_time(tsid_biped, sim_data, target_time=313.0)
 time.sleep(sleep_time)
 display_configuration_at_time(tsid_biped, sim_data, target_time=325.0)
 time.sleep(sleep_time)
-display_configuration_at_time(tsid_biped, sim_data, target_time=326.0)
+display_configuration_at_time(tsid_biped, sim_data, target_time=336.0)
 time.sleep(sleep_time)
 display_configuration_at_time(tsid_biped, sim_data, target_time=350.0)
 time.sleep(sleep_time)
@@ -547,6 +556,77 @@ time.sleep(sleep_time)
 
 # # Display the modified configuration
 # tsid_biped.display(q_modified)
+
+# ============================================================================
+# INTERACTIVE COMMAND FEATURE
+# ============================================================================
+
+def interactive_display_mode(tsid_biped, sim_data):
+    """Interactive mode to display configurations at user-specified times"""
+    if sim_data is None:
+        print("No simulation data available for interactive mode")
+        return
+    
+    max_time = sim_data['time_log'][-1]
+    print("\n" + "="*60)
+    print("INTERACTIVE DISPLAY MODE")
+    print("="*60)
+    print(f"Simulation duration: 0.0 to {max_time:.1f} seconds")
+    print("Commands:")
+    print("  <number>     - Display configuration at that time (e.g., 25.5)")
+    print("  list         - Show all available time points")
+    print("  help         - Show this help message")
+    print("  quit or q    - Exit interactive mode")
+    print("="*60)
+    
+    try:
+        while True:
+            user_input = input(f"\nEnter command (time 0.0-{max_time:.1f}s, 'help', or 'quit'): ").strip()
+            
+            if user_input.lower() in ['quit', 'q', 'exit']:
+                print("Exiting interactive mode...")
+                break
+            
+            elif user_input.lower() == 'help':
+                print("\nAvailable commands:")
+                print("  <number>     - Display configuration at that time (e.g., 25.5)")
+                print("  list         - Show some example time points")
+                print("  help         - Show this help message")
+                print("  quit or q    - Exit interactive mode")
+            
+            elif user_input.lower() == 'list':
+                print("\nExample time points from the simulation:")
+                example_times = [0, 12, 25, 37, 46, 60, 70, 85, 90, 108, 118, 132, 142, 156, 166, 180, 192, 204, 218, 228, 240, 252, 262, 276, 300, 313, 325, 350]
+                for i, t in enumerate(example_times):
+                    if t <= max_time:
+                        if i % 6 == 0:
+                            print()
+                        print(f"{t:6.1f}s", end="  ")
+                print(f"\n\nOr enter any time between 0.0 and {max_time:.1f} seconds")
+            
+            else:
+                try:
+                    target_time = float(user_input)
+                    if 0.0 <= target_time <= max_time:
+                        print(f"\nDisplaying configuration at time {target_time:.1f}s...")
+                        q_at_time, actual_time = display_configuration_at_time(tsid_biped, sim_data, target_time)
+                        print(f"Configuration displayed successfully!")
+                    else:
+                        print(f"Error: Time must be between 0.0 and {max_time:.1f} seconds")
+                except ValueError:
+                    print("Error: Please enter a valid number, or use 'help', 'list', or 'quit'")
+                except Exception as e:
+                    print(f"Error displaying configuration: {e}")
+    
+    except KeyboardInterrupt:
+        print("\n\nInteractive mode interrupted by user (Ctrl+C)")
+        print("Exiting...")
+
+# Start interactive mode
+print("\n" + "="*60)
+print("STARTING INTERACTIVE MODE")
+print("="*60)
+interactive_display_mode(tsid_biped, sim_data)
 
 
 
