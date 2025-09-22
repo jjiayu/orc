@@ -419,42 +419,134 @@ if sim_data is not None:
 else:
     print("Could not load simulation data. Please run the walking simulation first.")
 
-display_configuration_at_time(tsid_biped, sim_data, target_time=2.0)   # Early walking
-display_configuration_at_time(tsid_biped, sim_data, target_time=5.0)   # Mid walking  
-display_configuration_at_time(tsid_biped, sim_data, target_time=10.0)  # Late walking
-display_configuration_at_time(tsid_biped, sim_data, target_time=15.0)  # End of simulation
-
+sleep_time = 5.0
 
 display_configuration_at_time(tsid_biped, sim_data, target_time=0.0)
+time.sleep(sleep_time)
 display_configuration_at_time(tsid_biped, sim_data, target_time=12.0)
+time.sleep(sleep_time)
 display_configuration_at_time(tsid_biped, sim_data, target_time=25.0)
+time.sleep(sleep_time)
 display_configuration_at_time(tsid_biped, sim_data, target_time=37.0)
+time.sleep(sleep_time)
 display_configuration_at_time(tsid_biped, sim_data, target_time=46.0)
+time.sleep(sleep_time)
 display_configuration_at_time(tsid_biped, sim_data, target_time=60.0)
+time.sleep(sleep_time)
 display_configuration_at_time(tsid_biped, sim_data, target_time=70.0)
+time.sleep(sleep_time)
 display_configuration_at_time(tsid_biped, sim_data, target_time=85.0)
+time.sleep(sleep_time)
 display_configuration_at_time(tsid_biped, sim_data, target_time=90.0)
+time.sleep(sleep_time)
 display_configuration_at_time(tsid_biped, sim_data, target_time=108.0)
+time.sleep(sleep_time)
 display_configuration_at_time(tsid_biped, sim_data, target_time=118.0)
+time.sleep(sleep_time)
 display_configuration_at_time(tsid_biped, sim_data, target_time=132.0)
+time.sleep(sleep_time)
 display_configuration_at_time(tsid_biped, sim_data, target_time=142.0)
+time.sleep(sleep_time)
 display_configuration_at_time(tsid_biped, sim_data, target_time=156.0)
+time.sleep(sleep_time)
 display_configuration_at_time(tsid_biped, sim_data, target_time=166.0)
+time.sleep(sleep_time)
 display_configuration_at_time(tsid_biped, sim_data, target_time=180.0)
+time.sleep(sleep_time)
 display_configuration_at_time(tsid_biped, sim_data, target_time=192.0)
+time.sleep(sleep_time)
 display_configuration_at_time(tsid_biped, sim_data, target_time=204.0)
+time.sleep(sleep_time)
 display_configuration_at_time(tsid_biped, sim_data, target_time=218.0)
+time.sleep(sleep_time)
 display_configuration_at_time(tsid_biped, sim_data, target_time=228.0)
+time.sleep(sleep_time)
 display_configuration_at_time(tsid_biped, sim_data, target_time=240.0)
+time.sleep(sleep_time)
 display_configuration_at_time(tsid_biped, sim_data, target_time=252.0)
+time.sleep(sleep_time)
 display_configuration_at_time(tsid_biped, sim_data, target_time=262.0)
+time.sleep(sleep_time)
 display_configuration_at_time(tsid_biped, sim_data, target_time=276.0)
-display_configuration_at_time(tsid_biped, sim_data, target_time=286.0) ##########TO modify
+time.sleep(sleep_time)
+temp = np.array([ 6.12 , -0.3  ,  0.727,  0.002, -0.022,  0.999,  0.032, -0.319, -0.985, -0.421,  1.061, -0.681,  0.944,  0.238,  0.144, -1.08 ,  2.09 , -1.005, -0.187, -0.   ,  0.007,  0.258,  0.173, -0.   ,
+       -0.525, -0.   ,  0.   ,  0.1  , -0.   , -0.258, -0.173,  0.   , -0.525, -0.   ,  0.   ,  0.1  , -0.   ,  0.   , -0.   ])
+tsid_biped.display(temp)
+time.sleep(sleep_time)
+# display_configuration_at_time(tsid_biped, sim_data, target_time=286.0) ##########TO modify
 display_configuration_at_time(tsid_biped, sim_data, target_time=300.0)
+time.sleep(sleep_time)
 display_configuration_at_time(tsid_biped, sim_data, target_time=313.0)
+time.sleep(sleep_time)
 display_configuration_at_time(tsid_biped, sim_data, target_time=325.0)
+time.sleep(sleep_time)
 display_configuration_at_time(tsid_biped, sim_data, target_time=326.0)
+time.sleep(sleep_time)
 display_configuration_at_time(tsid_biped, sim_data, target_time=350.0)
+time.sleep(sleep_time)
+
+# q_at_time, actual_time = display_configuration_at_time(tsid_biped, sim_data, target_time=286.0)
+
+# # Modify the configuration
+# q_modified = q_at_time.copy()
+
+# # 1. Rotate robot orientation by 180 degrees around z-axis
+# # The base orientation quaternion is at positions 3-6: [qx, qy, qz, qw]
+# import pinocchio as pin
+# current_quat = q_modified[3:7]  # [qx, qy, qz, qw]
+# current_quat_pin = pin.Quaternion(current_quat[3], current_quat[0], current_quat[1], current_quat[2])  # w, x, y, z
+
+# # Create 180-degree rotation around z-axis quaternion
+# rotation_180_quat = pin.Quaternion(0.0, 0.0, 0.0, 1.0)  # 180 degrees around z
+
+# # Compose the rotations
+# new_quat_pin = rotation_180_quat * current_quat_pin
+# q_modified[3:7] = [new_quat_pin.x, new_quat_pin.y, new_quat_pin.z, new_quat_pin.w]
+
+# # 2. Swap left and right leg configurations AND rotate hip yaw joints by 180 degrees
+# # Joint ordering:
+# # Left leg: joints 7-12 (hip_yaw=7, hip_roll=8, hip_pitch=9, knee=10, ankle_pitch=11, ankle_roll=12)
+# # Right leg: joints 13-18 (hip_yaw=13, hip_roll=14, hip_pitch=15, knee=16, ankle_pitch=17, ankle_roll=18)
+
+# import numpy as np
+
+# # Store original left and right leg configurations
+# left_leg_joints = q_modified[7:13].copy()   # 6 joints for left leg
+# right_leg_joints = q_modified[13:19].copy() # 6 joints for right leg
+
+# # Swap the configurations
+# q_modified[7:13] = right_leg_joints   # Put right leg config in left leg joints
+# q_modified[13:19] = left_leg_joints   # Put left leg config in right leg joints
+
+# # Now rotate both hip yaw joints by 180 degrees
+# left_hip_yaw_idx = 7
+# right_hip_yaw_idx = 13
+
+# q_modified[left_hip_yaw_idx] += np.pi
+# q_modified[right_hip_yaw_idx] += np.pi
+
+# # Normalize angles to [-π, π] range
+# q_modified[left_hip_yaw_idx] = np.arctan2(np.sin(q_modified[left_hip_yaw_idx]), np.cos(q_modified[left_hip_yaw_idx]))
+# q_modified[right_hip_yaw_idx] = np.arctan2(np.sin(q_modified[right_hip_yaw_idx]), np.cos(q_modified[right_hip_yaw_idx]))
+
+# print("Original configuration:")
+# print(f"  Base position: [{q_at_time[0]:.3f}, {q_at_time[1]:.3f}, {q_at_time[2]:.3f}]")
+# print(f"  Base quaternion: [{q_at_time[3]:.3f}, {q_at_time[4]:.3f}, {q_at_time[5]:.3f}, {q_at_time[6]:.3f}]")
+# print(f"  Left leg joints: {q_at_time[7:13]}")
+# print(f"  Right leg joints: {q_at_time[13:19]}")
+# print(f"  Left hip yaw: {q_at_time[7]:.3f} rad ({np.degrees(q_at_time[7]):.1f}°)")
+# print(f"  Right hip yaw: {q_at_time[13]:.3f} rad ({np.degrees(q_at_time[13]):.1f}°)")
+
+# print("\nModified configuration:")
+# print(f"  Base position: [{q_modified[0]:.3f}, {q_modified[1]:.3f}, {q_modified[2]:.3f}]")
+# print(f"  Base quaternion: [{q_modified[3]:.3f}, {q_modified[4]:.3f}, {q_modified[5]:.3f}, {q_modified[6]:.3f}]")
+# print(f"  Left leg joints (was right): {q_modified[7:13]}")
+# print(f"  Right leg joints (was left): {q_modified[13:19]}")
+# print(f"  Left hip yaw: {q_modified[7]:.3f} rad ({np.degrees(q_modified[7]):.1f}°) [swapped + 180°]")
+# print(f"  Right hip yaw: {q_modified[13]:.3f} rad ({np.degrees(q_modified[13]):.1f}°) [swapped + 180°]")
+
+# # Display the modified configuration
+# tsid_biped.display(q_modified)
 
 
 
