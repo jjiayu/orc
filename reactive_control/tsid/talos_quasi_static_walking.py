@@ -303,7 +303,7 @@ def load_and_visualize_environment(tsid_biped, env_file="threepathnas"):
         print("Meshcat visualizer not available, skipping environment visualization")
 
 # Load and visualize the narrow passage environment
-load_and_visualize_environment(tsid_biped, "threepathnas")
+load_and_visualize_environment(tsid_biped, "narrow_passage")
 
 # Visualize the footsteps (show all footsteps including initial stance position)
 if loaded_footsteps is not None:
@@ -573,6 +573,12 @@ base_yaw_traj = np.zeros(N)
 base_yaw_vel_traj = np.zeros(N)
 base_yaw_acc_traj = np.zeros(N)
 contact_pattern = []
+
+# Initialize logging arrays
+N_total = N_pre + N + N_post
+q_log = np.zeros((tsid_biped.robot.nq, N_total))
+v_log = np.zeros((tsid_biped.robot.nv, N_total))
+tau = np.zeros((tsid_biped.robot.na, N_total))
 
 # Generate trajectories for each phase
 time_idx = 0
@@ -867,7 +873,64 @@ for i in range(-N_pre, N + N_post):
     if time_spent < conf.dt:
         time.sleep(conf.dt - time_spent)
 
+    # Log data (adjust index since i ranges from -N_pre to N+N_post-1)
+    log_idx = i + N_pre
+    if log_idx >= 0 and log_idx < N_total:
+        q_log[:, log_idx] = q
+        v_log[:, log_idx] = v
+        tau[:, log_idx] = tsid_biped.formulation.getActuatorForces(sol)
+
 print("CoM tracking completed!")
+
+# Save logged data to files
+print("Saving simulation data...")
+data_folder = "simulation_data"
+os.makedirs(data_folder, exist_ok=True)
+
+# Create time array for the logged data
+time_log = np.arange(-N_pre * conf.dt, (N + N_post) * conf.dt, conf.dt)
+
+# Save joint positions, velocities, and torques
+np.save(os.path.join(data_folder, "q_log.npy"), q_log)
+np.save(os.path.join(data_folder, "v_log.npy"), v_log)
+np.save(os.path.join(data_folder, "tau_log.npy"), tau)
+np.save(os.path.join(data_folder, "time_log.npy"), time_log)
+
+# Save trajectory references for comparison
+np.save(os.path.join(data_folder, "com_pos_traj.npy"), com_pos_traj)
+np.save(os.path.join(data_folder, "com_vel_traj.npy"), com_vel_traj)
+np.save(os.path.join(data_folder, "com_acc_traj.npy"), com_acc_traj)
+np.save(os.path.join(data_folder, "lf_pos_traj.npy"), lf_pos_traj)
+np.save(os.path.join(data_folder, "rf_pos_traj.npy"), rf_pos_traj)
+np.save(os.path.join(data_folder, "lf_yaw_traj.npy"), lf_yaw_traj)
+np.save(os.path.join(data_folder, "rf_yaw_traj.npy"), rf_yaw_traj)
+np.save(os.path.join(data_folder, "base_yaw_traj.npy"), base_yaw_traj)
+
+# Save metadata
+metadata = {
+    'dt': conf.dt,
+    'N_pre': N_pre,
+    'N': N,
+    'N_post': N_post,
+    'N_total': N_total,
+    'total_duration': total_duration,
+    'joint_names': [tsid_biped.model.names[i] for i in range(2, len(tsid_biped.model.names))],  # Skip universe and root
+    'nq': tsid_biped.robot.nq,
+    'nv': tsid_biped.robot.nv,
+    'na': tsid_biped.robot.na
+}
+
+import json
+with open(os.path.join(data_folder, "metadata.json"), 'w') as f:
+    json.dump(metadata, f, indent=2)
+
+print(f"Data saved to '{data_folder}/' folder:")
+print(f"  - q_log.npy: Joint positions ({q_log.shape})")
+print(f"  - v_log.npy: Joint velocities ({v_log.shape})")
+print(f"  - tau_log.npy: Joint torques ({tau.shape})")
+print(f"  - time_log.npy: Time array ({time_log.shape})")
+print(f"  - Reference trajectories (CoM, feet positions, yaws)")
+print(f"  - metadata.json: Simulation parameters and joint names")
 
 # input("Press enter to start")
 # for i in range(-N_pre, N + N_post):
@@ -912,11 +975,7 @@ print("CoM tracking completed!")
 #         print("Time %.3f Velocities are too high, stop everything!" % (t), norm(v))
 #         break
 
-#     if i > 0:
-#         q_log[:, i] = q
-#         v_log[:, i] = v
-#         tau[:, i] = tsid_biped.formulation.getActuatorForces(sol)
-#     dv = tsid_biped.formulation.getAccelerations(sol)
+
 
 #     if i >= 0:
 #         com_pos[:, i] = tsid_biped.robot.com(tsid_biped.formulation.data())
